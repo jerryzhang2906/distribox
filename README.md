@@ -36,7 +36,7 @@
 
 ### 第一步：下载
 
-从 [Releases](https://github.com/你的用户名/distribox/releases) 下载最新版本：
+从 [Releases](https://github.com/jerryzhang2906/distribox/releases) 下载最新版本：
 
 - **PC 端**：`distribox-windows.zip`（解压即用）
 - **手机端**：`distribox-worker.apk`（安装到手机）
@@ -98,7 +98,7 @@ gpu-z.exe
 
 ```bash
 # 克隆仓库
-git clone https://github.com/你的用户名/distribox.git
+git clone https://github.com/jerryzhang2906/distribox.git
 cd distribox
 
 # 构建 PC 端（Windows）
@@ -322,7 +322,7 @@ $env:ANDROID_NDK_HOME = "你的NDK路径"
 ### 开发环境设置
 
 ```bash
-git clone https://github.com/你的用户名/distribox.git
+git clone https://github.com/jerryzhang2906/distribox.git
 cd distribox
 go mod download
 make build
