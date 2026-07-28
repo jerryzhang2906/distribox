@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.distribox.worker'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.distribox.worker"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "distribox-worker-${variant.name}.apk"
+        }
+    }
+}
+
+dependencies {
+    // No external dependencies — we use gomobile AAR for Go bridge
+    implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
+}

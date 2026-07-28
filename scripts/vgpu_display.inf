@@ -1,0 +1,67 @@
+;
+; DistriBox Virtual GPU — Software Display Adapter INF
+;
+; Creates a software-enumerated display adapter using the
+; Microsoft Basic Display Adapter (MSBDA) driver that is
+; built into Windows 10+. This makes the virtual GPU
+; visible in Device Manager and Task Manager.
+;
+; Install: pnputil /add-driver vgpu_display.inf /install
+;          OR: devcon install vgpu_display.inf ROOT\DISTRIBOX
+;
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = Display
+ClassGUID   = {4d36e968-e325-11ce-bfc1-08002be10318}
+Provider    = "DistriBox Technologies"
+CatalogFile = vgpu_display.cat
+DriverVer   = 07/27/2026,1.0.0.0
+
+[Manufacturer]
+"DistriBox Technologies" = DistriBoxModels, NTamd64
+
+[DistriBoxModels.NTamd64]
+"DistriBox Virtual GPU (NVIDIA Compatible)" = DistriBox_Install, ROOT\DISTRIBOX\0000
+
+[DistriBox_Install]
+CopyFiles   = DistriBox_Files
+AddReg      = DistriBox_AddReg
+
+[DistriBox_Files]
+; MSBDA driver files are built into Windows — no copying needed
+dummy.txt
+
+[DistriBox_AddReg]
+; GPU specs visible in Device Manager
+HKR,,DriverDesc,,"DistriBox Virtual GPU (NVIDIA Compatible)"
+HKR,,HardwareInformation.MemSize,0x10001,0x00000001,0x00000000,0x00000000  ; 4 GB VRAM
+HKR,,HardwareInformation.ChipType,,"NVIDIA Compatible VGPU"
+HKR,,HardwareInformation.DACType,,"DistriBox"
+HKR,,HardwareInformation.AdapterString,,"DistriBox Virtual GPU"
+HKR,,HardwareInformation.BiosString,,"DistriBox VGPU BIOS v1.0"
+
+; Link to MSBDA driver
+HKR,,LowerFilters,0x00010000,"BasicDisplay"
+
+[DistriBox_Install.Services]
+AddService = BasicDisplay,,DistriBox_Service
+
+[DistriBox_Service]
+DisplayName = "DistriBox Virtual GPU Display Driver"
+ServiceType = 1  ; SERVICE_KERNEL_DRIVER
+StartType   = 3  ; SERVICE_DEMAND_START
+ErrorControl = 0 ; SERVICE_ERROR_IGNORE
+ServiceBinary = %12%\BasicDisplay.sys
+
+[DestinationDirs]
+DistriBox_Files = 11  ; %SystemRoot%\system32
+
+[SourceDisksNames]
+1 = "DistriBox VGPU Driver",,,
+
+[SourceDisksFiles]
+dummy.txt = 1
+
+[Strings]
+; Nothing extra needed

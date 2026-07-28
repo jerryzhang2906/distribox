@@ -1,0 +1,66 @@
+# Build outputs
+build/
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.a
+*.out
+*.pdb
+*.lib
+*.exp
+
+# Go
+vendor/
+*.test
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Android build outputs
+android/app/build/
+android/app/libs/
+android/.gradle/
+*.apk
+*.aab
+*.aar
+local.properties
+
+# Personal / sensitive
+.claude/
+settings.local.json
+*.bak
+*~
+
+# CMake temp files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.ninja*
+.ninja_*
+
+# Proto generated (keep checked-in for offline builds)
+# pkg/protocol/ is checked in
+
+# Archives
+*.zip
+*.tar.gz
+*.7z
+
+# GPU interception backups
+OpenCL_orig.dll
+nvcuda_orig.dll
+opengl32_orig.dll
+
+# Logs
+*.log

@@ -1,0 +1,16 @@
+{
+  "file_format_version": "1.2.0",
+  "layer": {
+    "name": "VK_LAYER_DISTRIBOX_virtual_gpu",
+    "type": "GLOBAL",
+    "library_path": ".\\distribox_vk_layer.dll",
+    "api_version": "1.2.0",
+    "implementation_version": "2",
+    "description": "DistriBox Virtual GPU v2 — compute dispatch interception + draw tracing + FPS monitoring",
+    "disable_environment": {
+      "DISABLE_DISTRIBOX_VK_LAYER": "1"
+    },
+    "device_extensions": [],
+    "instance_extensions": []
+  }
+}

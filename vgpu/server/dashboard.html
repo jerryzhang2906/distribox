@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DistriBox — Virtual GPU Control Panel</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+  --green: #3fb950; --orange: #d2991d; --red: #f85149; --purple: #a371f7;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 20px; font-weight: 600; color: var(--accent); }
+header .status { display: flex; gap: 12px; margin-left: auto; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.dot.online { background: var(--green); } .dot.offline { background: var(--red); }
+main { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto; gap: 16px; padding: 16px 24px; max-width: 1400px; margin: 0 auto; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.card h2 { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.full { grid-column: 1 / -1; }
+
+/* GPU Specs */
+.gpu-specs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.spec-item { text-align: center; padding: 12px; background: var(--bg); border-radius: 6px; }
+.spec-value { font-size: 24px; font-weight: 700; color: var(--accent); }
+.spec-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* Worker list */
+.worker-list { display: flex; flex-direction: column; gap: 8px; }
+.worker { display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--bg); border-radius: 6px; }
+.worker-icon { font-size: 24px; }
+.worker-info { flex: 1; }
+.worker-name { font-weight: 600; font-size: 14px; }
+.worker-meta { font-size: 12px; color: var(--muted); }
+.worker-score { font-size: 14px; font-weight: 600; color: var(--accent); }
+.worker-status { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.worker-status.idle { background: #1b3a1b; color: var(--green); }
+.worker-status.busy { background: #3a2f1b; color: var(--orange); }
+.worker-status.offline { background: #3a1b1b; color: var(--red); }
+
+/* Task log */
+.task-log { max-height: 300px; overflow-y: auto; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
+.log-entry { padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+.log-time { color: var(--muted); min-width: 70px; }
+.log-type { min-width: 60px; font-weight: 600; }
+.log-type.dispatch { color: var(--accent); }
+.log-type.complete { color: var(--green); }
+.log-type.error { color: var(--red); }
+.log-msg { flex: 1; }
+
+/* Buttons */
+.btn { padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; cursor: pointer; background: var(--surface); color: var(--text); transition: all 0.15s; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: #1f6feb; border-color: #1f6feb; color: white; }
+.btn.primary:hover { background: #388bfd; }
+.btn.danger { background: #da3633; border-color: #da3633; color: white; }
+.btn-row { display: flex; gap: 8px; margin-top: 12px; }
+
+/* ICD Status */
+.icd-status { display: flex; gap: 16px; align-items: center; }
+.icd-indicator { width: 12px; height: 12px; border-radius: 50%; }
+.icd-indicator.installed { background: var(--green); }
+.icd-indicator.missing { background: var(--red); }
+
+/* Chart area */
+.chart-bar { display: flex; align-items: flex-end; gap: 4px; height: 100px; padding: 8px; }
+.chart-column { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; transition: height 0.3s; min-width: 4px; opacity: 0.7; }
+.chart-column.current { opacity: 1; background: var(--green); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  main { grid-template-columns: 1fr; }
+  .gpu-specs { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ DistriBox</h1>
+  <span style="font-size:13px;color:var(--muted)">Virtual GPU Control Panel</span>
+  <div class="status">
+    <span id="ws-status"><span class="dot offline"></span>Disconnected</span>
+    <span id="worker-count"><span class="dot offline"></span>0 Workers</span>
+  </div>
+</header>
+<main>
+  <!-- GPU Specs -->
+  <div class="card full">
+    <h2>🖥️ Virtual GPU — Specifications</h2>
+    <div class="gpu-specs" id="gpu-specs">
+      <div class="spec-item"><div class="spec-value" id="spec-name">---</div><div class="spec-label">Model Name</div></div>
+      <div class="spec-item"><div class="spec-value" id="spec-vram">---</div><div class="spec-label">VRAM (MB)</div></div>
+      <div class="spec-item"><div class="spec-value" id="spec-cu">---</div><div class="spec-label">Compute Units</div></div>
+      <div class="spec-item"><div class="spec-value" id="spec-clock">---</div><div class="spec-label">Clock (MHz)</div></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn" onclick="refreshSpecs()">🔄 Refresh</button>
+      <button class="btn primary" onclick="installICD()">📦 Install OpenCL Proxy</button>
+      <button class="btn" onclick="checkICDStatus()">🔍 Check Status</button>
+      <button class="btn danger" onclick="uninstallICD()">🗑️ Remove Proxy</button>
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn primary" onclick="installDisplay()">🖥️ Install Display Adapter (Task Manager)</button>
+      <button class="btn danger" onclick="uninstallDisplay()">🗑️ Remove Display Adapter</button>
+    </div>
+  </div>
+
+  <!-- Workers -->
+  <div class="card">
+    <h2>🖧 Workers — <span id="wcount">0</span> Connected</h2>
+    <div class="worker-list" id="worker-list">
+      <div style="color:var(--muted);text-align:center;padding:20px">No workers connected</div>
+    </div>
+  </div>
+
+  <!-- Cluster Info -->
+  <div class="card">
+    <h2>📊 Cluster Stats</h2>
+    <div class="gpu-specs" style="grid-template-columns:1fr 1fr;">
+      <div class="spec-item"><div class="spec-value" id="stat-total-ram">0</div><div class="spec-label">Total RAM (MB)</div></div>
+      <div class="spec-item"><div class="spec-value" id="stat-total-vram">0</div><div class="spec-label">Total VRAM (MB)</div></div>
+      <div class="spec-item"><div class="spec-value" id="stat-total-cores">0</div><div class="spec-label">Total CPU Cores</div></div>
+      <div class="spec-item"><div class="spec-value" id="stat-gpu-count">0</div><div class="spec-label">GPU Workers</div></div>
+    </div>
+  </div>
+
+  <!-- Task Monitor -->
+  <div class="card full">
+    <h2>📋 Task Monitor — <span id="task-count">0</span> tasks</h2>
+    <div class="task-log" id="task-log">
+      <div style="color:var(--muted);text-align:center;padding:20px">Waiting for tasks...</div>
+    </div>
+  </div>
+
+  <!-- ICD / OpenCL Status -->
+  <div class="card full">
+    <h2>🔌 OpenCL ICD / System Proxy Status</h2>
+    <div id="icd-info" style="font-size:13px; line-height:1.8">
+      <div class="icd-status">
+        <div class="icd-indicator missing" id="icd-dot"></div>
+        <span id="icd-text">Checking status...</span>
+      </div>
+      <div id="icd-details" style="margin-top:8px;color:var(--muted)"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const SSE_URL = `/sse`;
+let evtSource, taskCount = 0;
+
+function connectSSE() {
+  evtSource = new EventSource(SSE_URL);
+  evtSource.onopen = () => {
+    document.getElementById('ws-status').innerHTML = '<span class="dot online"></span>Live';
+    refreshAll();
+  };
+  evtSource.onerror = () => {
+    document.getElementById('ws-status').innerHTML = '<span class="dot offline"></span>Reconnecting...';
+    evtSource.close();
+    setTimeout(connectSSE, 2000);
+  };
+  evtSource.onmessage = (e) => {
+    if (!e.data) return;
+    const data = JSON.parse(e.data);
+    if (data.workers !== undefined) updateWorkers(data.workers, data.cluster);
+    if (data.task) addTaskLog(data.task);
+    if (data.gpu) updateGPUSpecs(data.gpu);
+  };
+}
+
+async function refreshAll() {
+  try {
+    const [status, workers, device] = await Promise.all([
+      fetch('/api/v1/status').then(r => r.json()),
+      fetch('/api/v1/workers').then(r => r.json()),
+      fetch('/api/v1/device').then(r => r.json())
+    ]);
+    updateGPUSpecs(status.device);
+    updateWorkers(status.workers, null);
+    updateDevice(device);
+    checkICDStatus();
+  } catch(e) { console.error(e); }
+}
+
+function refreshSpecs() { refreshAll(); }
+
+function updateGPUSpecs(gpu) {
+  if (!gpu) return;
+  document.getElementById('spec-name').textContent = gpu.name ? gpu.name.substring(0, 20) : '---';
+  document.getElementById('spec-vram').textContent = gpu.vram_total_mb || gpu.vramTotalMb || '---';
+  document.getElementById('spec-cu').textContent = gpu.compute_units || gpu.ComputeUnits || '---';
+  document.getElementById('spec-clock').textContent = gpu.clock_mhz || gpu.MaxClockMHz || '---';
+}
+
+function updateDevice(dev) {
+  if (dev) updateGPUSpecs({name: dev.Name, vram_total_mb: dev.VRAMTotal/(1024*1024), compute_units: dev.ComputeUnits, clock_mhz: dev.MaxClockMHz});
+}
+
+function updateWorkers(workers, cluster) {
+  const el = document.getElementById('worker-list');
+  const cnt = document.getElementById('wcount');
+  const wc = document.getElementById('worker-count');
+  if (!workers || workers.length === 0) {
+    el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">No workers connected</div>';
+    cnt.textContent = '0'; wc.innerHTML = '<span class="dot offline"></span>0 Workers';
+    return;
+  }
+  cnt.textContent = workers.length;
+  wc.innerHTML = `<span class="dot online"></span>${workers.length} Workers`;
+  el.innerHTML = workers.map(w => `
+    <div class="worker">
+      <div class="worker-icon">${w.HasGPU ? '🎮' : '💻'}</div>
+      <div class="worker-info">
+        <div class="worker-name">${w.Name || w.name || w.id}</div>
+        <div class="worker-meta">${w.id || w.ID} | ${w.HasGPU ? 'GPU: '+(w.GPUVramMB||'?')+'MB' : 'CPU only'} | RAM: ${w.AvailableRAMMB||w.AvailableRAM||'?'}MB</div>
+      </div>
+      <div class="worker-score">${(w.CapabilityScore||w.capability_score||w.score||0).toFixed(1)}x</div>
+      <div class="worker-status ${(w.Status||w.status||'idle').toLowerCase()}">${w.Status||w.status||'idle'}</div>
+    </div>
+  `).join('');
+
+  if (cluster) {
+    document.getElementById('stat-total-ram').textContent = cluster.totalRamMB || 0;
+    document.getElementById('stat-total-vram').textContent = cluster.totalVramMB || 0;
+    document.getElementById('stat-total-cores').textContent = cluster.totalCores || 0;
+    document.getElementById('stat-gpu-count').textContent = cluster.gpuCount || 0;
+  }
+}
+
+function addTaskLog(task) {
+  taskCount++;
+  document.getElementById('task-count').textContent = taskCount;
+  const log = document.getElementById('task-log');
+  if (log.querySelector('div[style]')) log.innerHTML = '';
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const now = new Date().toLocaleTimeString();
+  entry.innerHTML = `
+    <span class="log-time">${now}</span>
+    <span class="log-type ${task.error ? 'error' : 'complete'}">${task.error ? 'ERROR' : 'COMPLETE'}</span>
+    <span class="log-msg">${task.kernel || 'task'} → ${task.worker || 'local'} (${task.duration || '?'}ms) ${task.error || ''}</span>
+  `;
+  log.insertBefore(entry, log.firstChild);
+  if (log.children.length > 50) log.lastChild.remove();
+}
+
+async function installICD() {
+  const res = await fetch('/api/v1/icd/install', {method:'POST'});
+  const data = await res.json();
+  alert(data.status === 'ok' ? 'ICD/Proxy installed successfully!' : 'Error: ' + (data.error||'unknown'));
+  checkICDStatus();
+}
+
+async function uninstallICD() {
+  if (!confirm('Restore original OpenCL.dll?')) return;
+  const res = await fetch('/api/v1/icd/uninstall', {method:'POST'});
+  const data = await res.json();
+  alert(data.status === 'ok' ? 'ICD uninstalled, original OpenCL.dll restored.' : 'Error: ' + data.error);
+  checkICDStatus();
+}
+
+async function checkICDStatus() {
+  try {
+    const res = await fetch('/api/v1/icd/status');
+    const data = await res.json();
+    document.getElementById('icd-dot').className = 'icd-indicator ' + (data.proxy_installed ? 'installed' : 'missing');
+    document.getElementById('icd-text').textContent = data.proxy_installed
+      ? 'OpenCL Proxy: INSTALLED — Virtual GPU is SYSTEM-WIDE visible'
+      : 'OpenCL Proxy: Not installed';
+    document.getElementById('icd-details').innerHTML = `
+      System OpenCL Proxy: ${data.proxy_installed ? '✅ Active' : '❌ Not installed'}<br>
+      ICD Registered: ${data.icd_registered ? '✅ ' + data.icd_path : '❌ Not registered'}<br>
+      Backup OpenCL_orig.dll: ${data.backup_exists ? '✅ Present' : '❌ Missing'}<br>
+      Virtual GPU Visibility: ${data.platforms_found ? '✅ ' + data.platforms_found + ' platform(s) visible' : '❌ Not visible'}
+    `;
+  } catch(e) { document.getElementById('icd-text').textContent = 'Cannot check status'; }
+}
+
+connectSSE();
+refreshAll();
+setInterval(refreshAll, 10000);
+
+async function installDisplay() {
+  const res = await fetch('/api/v1/display/install', {method:'POST'});
+  const data = await res.json();
+  alert(data.output || data.status);
+}
+async function uninstallDisplay() {
+  if (!confirm('Remove DistriBox display adapter?')) return;
+  const res = await fetch('/api/v1/display/uninstall', {method:'POST'});
+  const data = await res.json();
+  alert(data.output || data.status);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package distri.v1;
+option go_package = "github.com/distribox/pkg/protocol/distri/v1;distriv1";
+
+// ─────────────────────────────────────────────────────────
+// Worker capability report
+// ─────────────────────────────────────────────────────────
+
+message CapabilityReport {
+  string worker_id = 1;
+  int64 timestamp_unix_ms = 2;
+  string hostname = 3;
+  string os = 4;
+  string arch = 5;
+
+  ComputeCapability compute = 6;
+  NetworkCapability network = 7;
+  DynamicMetrics dynamic = 8;
+  UserPolicy user_policy = 9;
+}
+
+// ── Compute Hardware ───────────────────────────────────
+
+message ComputeCapability {
+  CPUInfo cpu = 1;
+  GPUInfo gpu = 2;
+  MemoryInfo memory = 3;
+}
+
+message CPUInfo {
+  string model = 1;
+  uint32 cores_physical = 2;
+  uint32 cores_logical = 3;
+  uint32 frequency_mhz = 4;
+  repeated string isa_features = 5;     // ["AVX2", "FMA", "NEON", ...]
+  double benchmark_gflops = 6;          // Empirically measured
+}
+
+message GPUInfo {
+  string vendor = 1;                    // "nvidia", "amd", "intel", "arm", "qualcomm"
+  string model = 2;
+  uint64 vram_mb = 3;
+  uint32 compute_units = 4;
+  uint32 frequency_mhz = 5;
+  string opencl_version = 6;            // "OpenCL 3.0" etc.
+  string opencl_device_name = 7;
+  double benchmark_gflops = 8;          // Empirically measured
+  bool available = 9;                   // false if GPU exists but OpenCL unavailable
+}
+
+message MemoryInfo {
+  uint64 total_ram_mb = 1;
+  uint64 available_ram_mb = 2;
+  double bandwidth_gb_s = 3;            // Estimated
+}
+
+// ── Network ────────────────────────────────────────────
+
+message NetworkCapability {
+  string interface_type = 1;            // "wifi", "ethernet"
+  uint32 bandwidth_mbps = 2;            // Estimated
+  double latency_ms_to_orchestrator = 3;
+}
+
+// ── Dynamic State ──────────────────────────────────────
+
+message DynamicMetrics {
+  double cpu_utilization_pct = 1;
+  double gpu_utilization_pct = 2;
+  double memory_used_pct = 3;
+  double battery_pct = 4;
+  bool charging = 5;
+  bool thermal_throttled = 6;
+  double temperature_celsius = 7;
+}
+
+// ── User-Defined Limits ────────────────────────────────
+
+message UserPolicy {
+  uint32 max_cpu_cores = 1;             // 0 = no limit
+  uint64 max_ram_mb = 2;                // 0 = no limit
+  uint64 max_gpu_vram_mb = 3;           // 0 = no limit
+  double intensity = 4;                 // 0.0 - 1.0, fraction of compute to contribute
+  bool only_when_idle = 5;
+  bool only_when_charging = 6;
+  bool only_on_wifi = 7;
+}

@@ -1,0 +1,162 @@
+syntax = "proto3";
+
+package distri.v1;
+option go_package = "github.com/distribox/pkg/protocol/distri/v1;distriv1";
+
+import "distri/v1/capability.proto";
+import "distri/v1/compute.proto";
+
+// ─────────────────────────────────────────────────────────
+// Orchestrator (Virtual GPU Core) �?Worker RPC
+// ─────────────────────────────────────────────────────────
+
+service Orchestrator {
+  // Worker registers with orchestrator, receives worker ID + session token
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Bidirectional stream for ongoing communication:
+  // - Capability reports (worker �?orchestrator)
+  // - Shard/task assignments (orchestrator �?worker)
+  // - Heartbeat pings
+  rpc ControlChannel(stream WorkerMessage) returns (stream OrchestratorMessage);
+}
+
+// ── Registration ───────────────────────────────────────
+
+message RegisterRequest {
+  string hostname = 1;           // Human-readable device name
+  string arch = 2;               // CPU architecture: amd64, arm64, etc.
+  string os = 3;                 // Operating system
+  string auth_token = 4;         // Pre-shared cluster token
+
+  // Quick summary for immediate filtering (matches mDNS TXT records)
+  uint64 total_ram_mb = 5;
+  bool has_gpu = 6;
+  string gpu_vendor = 7;
+  string protocol_version = 8;   // Expected: "1.0"
+}
+
+message RegisterResponse {
+  string worker_id = 1;          // UUID assigned by orchestrator
+  string session_token = 2;      // JWT for subsequent requests
+  string orchestrator_version = 3;
+}
+
+// ── Bidirectional Control Stream ───────────────────────
+
+message WorkerMessage {
+  oneof payload {
+    CapabilityReport capability_update = 1;
+    TaskResult task_result = 2;
+    Heartbeat heartbeat = 3;
+    CompileResult compile_result = 4;
+    BufferTransfer buffer = 5;
+  }
+}
+
+message OrchestratorMessage {
+  oneof payload {
+    TaskAssignment task = 1;
+    CompileRequest compile = 2;
+    BufferTransfer buffer = 3;
+    HeartbeatAck heartbeat_ack = 4;
+    Shutdown shutdown = 5;
+  }
+}
+
+// ── Heartbeat ──────────────────────────────────────────
+
+message Heartbeat {
+  int64 timestamp_unix_ms = 1;
+  double cpu_utilization = 2;
+  double gpu_utilization = 3;
+  double memory_used_pct = 4;
+  bool thermal_throttled = 5;
+  double battery_pct = 6;
+  bool charging = 7;
+}
+
+message HeartbeatAck {
+  int64 server_timestamp_unix_ms = 1;
+}
+
+// ── Shutdown ───────────────────────────────────────────
+
+message Shutdown {
+  string reason = 1;
+  bool graceful = 2;             // If true, worker should finish current tasks
+}
+
+// ── Task Assignment ────────────────────────────────────
+
+message TaskAssignment {
+  string task_id = 1;
+  string command_queue_id = 2;   // Which queue this task belongs to
+
+  // NDRange specification for this worker's portion
+  ComputeTask compute = 3;
+
+  // Buffer references (the worker must already have these buffers)
+  repeated string input_buffer_ids = 4;
+  repeated string output_buffer_ids = 5;
+
+  // Event dependencies: complete these local events before starting
+  repeated string wait_event_ids = 6;
+}
+
+message TaskResult {
+  string task_id = 1;
+  TaskStatus status = 2;
+  string error_message = 3;
+
+  // For NDRange results: where to write the partial output
+  repeated BufferRegion output_regions = 4;
+
+  // Timing info
+  int64 start_time_ns = 5;
+  int64 end_time_ns = 6;
+}
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_QUEUED = 1;
+  TASK_STATUS_RUNNING = 2;
+  TASK_STATUS_COMPLETE = 3;
+  TASK_STATUS_ERROR = 4;
+}
+
+// ── Buffer Transfer ────────────────────────────────────
+
+message BufferTransfer {
+  string buffer_id = 1;
+  TransferDirection direction = 2;  // TO_WORKER or FROM_WORKER
+  int64 size_bytes = 3;
+  uint32 flags = 4;                 // cl_mem_flags
+  string data_plane_addr = 5;       // TCP address for data transfer
+  bytes data = 6;                   // Inline data for small/medium buffers
+}
+
+enum TransferDirection {
+  TRANSFER_UNSPECIFIED = 0;
+  TRANSFER_TO_WORKER = 1;
+  TRANSFER_FROM_WORKER = 2;
+}
+
+// ── Compile Request ───────────────────────────────────
+
+message CompileRequest {
+  string program_id = 1;
+  string kernel_source = 2;
+  string compile_options = 3;
+  string kernel_name = 4;         // Specific kernel to compile
+}
+
+message CompileResult {
+  string program_id = 1;
+  string kernel_name = 2;
+  bool success = 3;
+  string build_log = 4;
+  bytes binary = 5;               // Compiled binary for caching
+}
+
+

@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">DistriBox Worker</string>
+    <string name="status_discovering">Discovering orchestrator...</string>
+    <string name="status_connected">Connected: %s</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="start_service">Start Worker</string>
+    <string name="stop_service">Stop Worker</string>
+    <string name="intensity">Compute Intensity</string>
+    <string name="channel_name">DistriBox Worker</string>
+    <string name="channel_desc">DistriBox compute worker is running</string>
+</resources>

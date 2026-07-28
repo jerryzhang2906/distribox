@@ -1,0 +1,4 @@
+# DistriBox OpenCL ICD registration
+# Place this file in /etc/OpenCL/vendors/ (Linux)
+# or register via scripts/install_icd.ps1 (Windows)
+/usr/local/lib/libdistribox_icd.so

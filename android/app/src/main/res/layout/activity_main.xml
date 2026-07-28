@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DistriBox Worker — Main Activity Layout -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="#1a1a2e">
+
+    <!-- Logo / Title -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="DistriBox"
+        android:textSize="28sp"
+        android:textColor="#e94560"
+        android:textStyle="bold"
+        android:layout_gravity="center"
+        android:layout_marginTop="30dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Distributed GPU Worker"
+        android:textSize="14sp"
+        android:textColor="#8888aa"
+        android:layout_gravity="center"
+        android:layout_marginBottom="20dp" />
+
+    <!-- Device Info Card -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#16213e"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:id="@+id/deviceInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Detecting hardware..."
+            android:textSize="13sp"
+            android:textColor="#cccccc" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Disconnected"
+            android:textSize="16sp"
+            android:textColor="#ff6b6b"
+            android:layout_marginTop="8dp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Toggle Button -->
+    <ToggleButton
+        android:id="@+id/toggleService"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:textOn="STOP WORKER"
+        android:textOff="START WORKER"
+        android:textSize="18sp"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Intensity Control -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Compute Intensity"
+        android:textSize="14sp"
+        android:textColor="#aaaacc"
+        android:layout_marginBottom="8dp" />
+
+    <SeekBar
+        android:id="@+id/intensityBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="80"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Low"
+            android:textSize="12sp"
+            android:textColor="#888888" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="High"
+            android:textSize="12sp"
+            android:textColor="#888888"
+            android:gravity="end" />
+    </LinearLayout>
+
+    <!-- Info -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Phone GPU will be shared with your PC over WiFi.\nBattery-efficient: only computes when charging."
+        android:textSize="11sp"
+        android:textColor="#555577"
+        android:layout_marginTop="20dp"
+        android:gravity="center" />
+
+</LinearLayout>
