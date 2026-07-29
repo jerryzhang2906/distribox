@@ -22,8 +22,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -38,6 +40,7 @@ import (
 
 	distriv1 "github.com/distribox/pkg/protocol/distri/v1"
 	"github.com/distribox/pkg/discovery"
+	"github.com/distribox/pkg/installer"
 	"github.com/distribox/vgpu/calibrate"
 	"github.com/distribox/vgpu/mem"
 	"github.com/distribox/vgpu/monitor"
@@ -51,13 +54,14 @@ import (
 )
 
 var (
-	mode       = flag.String("mode", "both", "Run mode: vgpu, worker, both")
-	noWorker   = flag.Bool("no-worker", false, "Disable local worker (same as --mode vgpu)")
-	ipcAddr    = flag.String("ipc-addr", "127.0.0.1:9876", "IPC listen address")
-	grpcPort   = flag.Int("grpc-port", 13800, "gRPC port")
-	httpPort   = flag.Int("http-port", 13801, "HTTP dashboard port")
-	workerName = flag.String("name", "", "Worker display name")
-	intensity  = flag.Float64("intensity", 0.8, "Compute intensity (0.0-1.0)")
+	mode             = flag.String("mode", "both", "Run mode: vgpu, worker, both")
+	noWorker         = flag.Bool("no-worker", false, "Disable local worker (same as --mode vgpu)")
+	ipcAddr          = flag.String("ipc-addr", "127.0.0.1:9876", "IPC listen address")
+	grpcPort         = flag.Int("grpc-port", 13800, "gRPC port")
+	httpPort         = flag.Int("http-port", 13801, "HTTP dashboard port")
+	workerName       = flag.String("name", "", "Worker display name")
+	intensity        = flag.Float64("intensity", 0.8, "Compute intensity (0.0-1.0)")
+	orchestratorAddr = flag.String("orchestrator", "", "Remote orchestrator address (for --mode worker)")
 )
 
 func main() {
@@ -178,9 +182,10 @@ func runWorkerOnly() {
 
 	ctx := context.Background()
 
-	// Auto-discover orchestrator if not specified
-	orchAddr := fmt.Sprintf("localhost:%d", *grpcPort)
-	if flag.Lookup("orchestrator") == nil {
+	// Use explicit --orchestrator address if provided, otherwise auto-discover via mDNS
+	orchAddr := *orchestratorAddr
+	if orchAddr == "" {
+		orchAddr = fmt.Sprintf("localhost:%d", *grpcPort)
 		mdnsDisc := discovery.New("worker", discovery.DeviceInfo{
 			Name: getDefaultName(),
 			Arch: runtime.GOARCH,
@@ -355,32 +360,58 @@ func startWorker(ctx context.Context, orchAddr, token string) error {
 // ── Subcommands ─────────────────────────────────────────
 
 func runInstall() {
-	fmt.Println("DistriBox Installation")
-	fmt.Println()
-	fmt.Println("To install the OpenCL ICD proxy (requires Administrator):")
-	fmt.Println("  1. Copy build\\icd\\distribox_icd.dll to C:\\Windows\\System32\\")
-	fmt.Println("  2. Register via registry:")
-	fmt.Println("     reg add \"HKLM\\SOFTWARE\\Khronos\\OpenCL\\Vendors\" /v distribox_icd.dll /t REG_DWORD /d 0 /f")
-	fmt.Println()
-	fmt.Println("Or start VGPU Core and visit http://localhost:13801 to install from the dashboard.")
-	fmt.Println()
-	fmt.Println("To install Vulkan layer:")
-	fmt.Println("  reg add \"HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers\" /v distribox /d \"C:\\Windows\\System32\\distribox_vk_layer.json\" /t REG_SZ /f")
-	fmt.Println()
-	fmt.Println("To install CUDA proxy:")
-	fmt.Println("  ren C:\\Windows\\System32\\nvcuda.dll nvcuda_orig.dll")
-	fmt.Println("  copy build\\cuda\\nvcuda.dll C:\\Windows\\System32\\")
+	fmt.Println(installer.InstallICD().Output)
 }
 
 func runStatus() {
-	fmt.Println("DistriBox Cluster Status")
-	fmt.Println("────────────────────────")
 	resp, err := httpGet(fmt.Sprintf("http://localhost:%d/api/v1/status", *httpPort))
 	if err != nil {
 		fmt.Println("VGPU Core not running. Start with: distribox.exe")
 		return
 	}
-	fmt.Println(string(resp))
+
+	// Parse JSON and format output
+	var status struct {
+		Device      map[string]interface{} `json:"device"`
+		WorkerCount int                    `json:"worker_count"`
+		Workers     []struct {
+			ID     string  `json:"id"`
+			Name   string  `json:"name"`
+			Status string  `json:"status"`
+			CPU    float64 `json:"cpu_pct"`
+			GPU    float64 `json:"gpu_pct"`
+			RAM    float64 `json:"ram_pct"`
+		} `json:"workers"`
+		Uptime string `json:"uptime"`
+	}
+	if err := json.Unmarshal(resp, &status); err != nil {
+		// Fall back to raw output if JSON parse fails
+		fmt.Println(string(resp))
+		return
+	}
+
+	fmt.Println("╔════════════════════════════════════════════╗")
+	fmt.Println("║      DistriBox — Cluster Status            ║")
+	fmt.Println("╠════════════════════════════════════════════╣")
+	if devName, ok := status.Device["name"].(string); ok {
+		fmt.Printf("║  Virtual GPU: %-28s ║\n", devName)
+	}
+	if vram, ok := status.Device["vram_mb"].(float64); ok {
+		fmt.Printf("║  VRAM:        %-8.0f MB               ║\n", vram)
+	}
+	if cu, ok := status.Device["compute_units"].(float64); ok {
+		fmt.Printf("║  Compute Units: %-4.0f                    ║\n", cu)
+	}
+	fmt.Printf("║  Workers:     %-2d                        ║\n", status.WorkerCount)
+	fmt.Println("╠════════════════════════════════════════════╣")
+
+	if len(status.Workers) > 0 {
+		fmt.Println("║  Worker List:                              ║")
+		for _, w := range status.Workers {
+			fmt.Printf("║    %-20s %-10s ║\n", w.Name, w.Status)
+		}
+	}
+	fmt.Println("╚════════════════════════════════════════════╝")
 }
 
 // ── Helpers ─────────────────────────────────────────────
@@ -405,7 +436,6 @@ func httpGet(url string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	buf := make([]byte, 4096)
-	n, _ := resp.Body.Read(buf)
-	return buf[:n], nil
+	// Read full body without size limit
+	return io.ReadAll(resp.Body)
 }

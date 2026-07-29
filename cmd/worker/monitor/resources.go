@@ -8,8 +8,6 @@
 package monitor
 
 import (
-	"math"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -60,36 +58,24 @@ func (m *ResourceMonitor) sample() {
 	}
 
 	// ── CPU ─────────────────────────────────────────
-	// Use runtime metrics for CPU count
-	numCPU := runtime.NumCPU()
-	_ = numCPU
-	// In a full implementation: read /proc/stat (Linux) or Performance Counter (Windows)
-	snap.CPUPct = estimateCPUUsage()
+	snap.CPUPct = sampleCPU()
 
 	// ── Memory ──────────────────────────────────────
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
-	snap.MemoryUsedMB = int64(memStats.Alloc / (1024 * 1024))
-	// Total system memory would come from OS APIs
-	snap.MemoryAvailableMB = 4096 // Placeholder
+	snap.MemoryUsedMB, snap.MemoryAvailableMB = sampleMemory()
 	if snap.MemoryAvailableMB > 0 {
 		snap.MemoryPct = float64(snap.MemoryUsedMB) / float64(snap.MemoryAvailableMB) * 100
 	}
 
 	// ── GPU ─────────────────────────────────────────
-	// Platform-specific GPU utilization query
-	snap.GPUPct = 0.0
+	snap.GPUPct = sampleGPU()
 
 	// ── Battery ─────────────────────────────────────
-	// Platform-specific battery query
-	// Android: BatteryManager API (via gomobile bridge)
-	// Linux: /sys/class/power_supply/
-	// Windows: GetSystemPowerStatus
-	// macOS: IOKit
-	snap.BatteryPct = 100.0
-	snap.Charging = true
+	snap.BatteryPct, snap.Charging = sampleBattery()
 
 	// ── Thermal ─────────────────────────────────────
+	// No standard user-mode API for CPU/GPU temperature on any platform.
+	// Requires kernel driver or third-party WMI provider (e.g., OpenHardwareMonitor).
+	// Leaving as sane defaults for now.
 	snap.ThermalThrottled = false
 	snap.TemperatureC = 45.0
 
@@ -105,11 +91,3 @@ func (m *ResourceMonitor) Snapshot() ResourceSnapshot {
 	return m.latest
 }
 
-// estimateCPUUsage provides a rough CPU usage estimate
-// In production, this would use OS-specific APIs
-func estimateCPUUsage() float64 {
-	// Use a simple heuristic based on goroutine count
-	numGoroutines := runtime.NumGoroutine()
-	// Rough: more goroutines = more CPU usage (very approximate)
-	return math.Min(float64(numGoroutines)/float64(runtime.NumCPU())*5.0, 100.0)
-}

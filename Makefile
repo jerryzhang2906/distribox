@@ -29,7 +29,9 @@ proto-go:
 # ── Go components ───────────────────────────────────────
 build-go: proto-go
 	go build $(GO_BUILD_FLAGS) -o $(OUT_DIR)/distribox.exe ./cmd/distribox
-	go build $(GO_BUILD_FLAGS) -o $(OUT_DIR)/distribox-cli ./cmd/cli
+	go build $(GO_BUILD_FLAGS) -o $(OUT_DIR)/distribox-cli.exe ./cmd/cli
+	go build $(GO_BUILD_FLAGS) -o $(OUT_DIR)/distribox-worker.exe ./cmd/worker
+	go build $(GO_BUILD_FLAGS) -o $(OUT_DIR)/distribox-vgpu.exe ./vgpu
 
 # ── C/C++ components ────────────────────────────────────
 build-engine:
@@ -92,7 +94,12 @@ dist-android:
 		powershell -ExecutionPolicy Bypass -File scripts/build_android.ps1; \
 	fi
 
-dist: dist-windows
+dist-windows-zip: dist-windows
+	@echo "Creating distribox-windows.zip..."
+	powershell -Command "Compress-Archive -Path $(OUT_DIR)/dist-windows/* -DestinationPath $(OUT_DIR)/distribox-windows.zip -Force"
+	@echo "Release archive: $(OUT_DIR)/distribox-windows.zip"
+
+dist: dist-windows dist-windows-zip
 	@echo "All distributions built!"
 
 # ── Test ────────────────────────────────────────────────
@@ -114,11 +121,11 @@ install-icd-linux:
 
 install-icd-win:
 	@echo "Installing ICD for Windows (requires admin)..."
-	powershell -ExecutionPolicy Bypass -File scripts/install_icd.ps1
+	powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
 # ── Clean ───────────────────────────────────────────────
 clean:
-	rm -rf $(OUT_DIR)
+	rm -rf $(OUT_DIR) distribox-windows.zip
 	go clean -cache
 
 # ── Help ────────────────────────────────────────────────

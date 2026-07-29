@@ -55,6 +55,19 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- Server Address -->
+    <EditText
+        android:id="@+id/serverAddress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Orchestrator IP (empty = auto-discover)"
+        android:textSize="14sp"
+        android:textColor="#ffffff"
+        android:background="#16213e"
+        android:padding="12dp"
+        android:singleLine="true"
+        android:layout_marginBottom="16dp" />
+
     <!-- Toggle Button -->
     <ToggleButton
         android:id="@+id/toggleService"
