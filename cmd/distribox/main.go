@@ -1,24 +1,32 @@
 /*
- * cmd/distribox/main.go — DistriBox Unified Launcher
+ * cmd/distribox/main.go — DistriBox Unified Launcher v0.3.0
  *
  * Single executable that runs the complete DistriBox stack:
- *   - Virtual GPU Core (ICD server + gRPC orchestrator + HTTP dashboard)
+ *   - Virtual GPU Core (IPC server + gRPC orchestrator + HTTP API)
  *   - Local Worker (CPU/GPU compute provider)
+ *   - Live console status panel (replaces web dashboard)
  *   - mDNS auto-discovery
  *
  * Usage:
- *   distribox.exe                           # Full stack (VGPU + Worker)
- *   distribox.exe --mode vgpu               # VGPU Core only
- *   distribox.exe --mode worker             # Worker only
- *   distribox.exe --mode both               # Full stack (default)
- *   distribox.exe --no-worker               # VGPU Core only (same as --mode vgpu)
- *   distribox.exe install                   # Install ICD + register services
- *   distribox.exe status                    # Show cluster status
+ *   distribox.exe                              # Full stack (VGPU + Worker + Console)
+ *   distribox.exe --mode vgpu                  # VGPU Core only
+ *   distribox.exe --mode worker                # Worker only
+ *   distribox.exe --mode both                  # Full stack (default)
+ *   distribox.exe --no-worker                  # VGPU Core only
+ *   distribox.exe install                      # Install ICD + GPU interception
+ *   distribox.exe status                       # Show cluster status
+ *   distribox.exe version                      # Show version
+ *   distribox.exe device create [--auto]       # Create virtual GPU
+ *   distribox.exe device status                # Virtual GPU details
+ *   distribox.exe device remove                # Remove virtual GPU
+ *   distribox.exe worker list                  # List workers
+ *   distribox.exe worker set <id> [opts]       # Configure worker
  */
 
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -54,15 +62,20 @@ import (
 	wmon "github.com/distribox/cmd/worker/monitor"
 )
 
+const (
+	version = "v0.3.0"
+)
+
 var (
 	mode             = flag.String("mode", "both", "Run mode: vgpu, worker, both")
-	noWorker         = flag.Bool("no-worker", false, "Disable local worker (same as --mode vgpu)")
+	noWorker         = flag.Bool("no-worker", false, "Disable local worker")
 	ipcAddr          = flag.String("ipc-addr", "127.0.0.1:9876", "IPC listen address")
 	grpcPort         = flag.Int("grpc-port", 13800, "gRPC port")
-	httpPort         = flag.Int("http-port", 13801, "HTTP dashboard port")
+	httpPort         = flag.Int("http-port", 13801, "HTTP API port")
 	workerName       = flag.String("name", "", "Worker display name")
 	intensity        = flag.Float64("intensity", 0.8, "Compute intensity (0.0-1.0)")
-	orchestratorAddr = flag.String("orchestrator", "", "Remote orchestrator address (for --mode worker)")
+	orchestratorAddr = flag.String("orchestrator", "", "Remote orchestrator address")
+	vgpuURL          = flag.String("vgpu-url", "", "VGPU Core HTTP URL (for CLI commands, default: http://localhost:13801)")
 )
 
 func main() {
@@ -72,23 +85,11 @@ func main() {
 		*mode = "vgpu"
 	}
 
-	// Handle subcommands
+	// Handle subcommands (CLI mode)
 	args := flag.Args()
 	if len(args) > 0 {
-		switch args[0] {
-		case "install":
-			runInstall()
-			return
-		case "status":
-			runStatus()
-			return
-		case "version":
-			fmt.Println("DistriBox v0.2.0 — Distributed Virtual GPU")
-			return
-		case "help":
-			flag.Usage()
-			return
-		}
+		runSubcommand(args)
+		return
 	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -104,8 +105,81 @@ func main() {
 	}
 }
 
+// ── Subcommand dispatcher ────────────────────────────────
+
+func runSubcommand(args []string) {
+	switch args[0] {
+	case "install":
+		runInstall()
+	case "status":
+		runStatus()
+	case "version":
+		fmt.Printf("DistriBox %s — Distributed Virtual GPU\n", version)
+		fmt.Println("Platform: " + runtime.GOOS + "/" + runtime.GOARCH)
+	case "help", "--help", "-h":
+		printUsage()
+	case "device":
+		handleDevice(args[1:])
+	case "worker":
+		handleWorker(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Println(`DistriBox ` + version + ` — Distributed Virtual GPU
+
+USAGE:
+  distribox.exe                           Start full stack (VGPU + Worker + Console)
+  distribox.exe --mode vgpu               VGPU Core only
+  distribox.exe --mode worker             Worker only
+  distribox.exe install                   Install ICD + GPU interception layers
+  distribox.exe status                    Show cluster status
+  distribox.exe version                   Show version
+  distribox.exe device create [--auto]    Create virtual GPU device
+  distribox.exe device status             Show virtual GPU details
+  distribox.exe device remove             Remove virtual GPU device
+  distribox.exe worker list               List connected workers
+  distribox.exe worker set <id> [...]     Configure worker settings
+
+FLAGS:
+  --mode <vgpu|worker|both>    Run mode (default: both)
+  --no-worker                  Disable local worker (same as --mode vgpu)
+  --ipc-addr <addr>            IPC listen address (default: 127.0.0.1:9876)
+  --grpc-port <port>           gRPC port (default: 13800)
+  --http-port <port>           HTTP API port (default: 13801)
+  --name <name>                Worker display name
+  --intensity <0.0-1.0>        Compute intensity (default: 0.8)
+  --orchestrator <addr>        Remote orchestrator address
+  --vgpu-url <url>             VGPU Core URL for CLI commands
+
+DEVICE CREATE OPTIONS:
+  --name <name>     Virtual GPU name (default: "DistriBox Virtual GPU")
+  --vram <gb>       VRAM size in GB (default: auto)
+  --cu <n>          Compute units (default: auto)
+  --clock <mhz>     Clock frequency in MHz (default: auto)
+  --auto            Auto-compute specs from worker pool
+
+WORKER SET OPTIONS:
+  --intensity <0.0-1.0>   Compute intensity
+  --only-charging          Only compute when charging
+  --max-cores <n>          Max CPU cores
+  --max-ram <mb>           Max RAM in MB
+
+EXAMPLES:
+  distribox.exe
+  distribox.exe --mode worker --orchestrator 192.168.1.100:13800
+  distribox.exe install
+  distribox.exe device create --auto
+  distribox.exe worker set w-abc123 --intensity 0.5`)
+}
+
+// ── Banner ───────────────────────────────────────────────
+
 func printBanner() {
-	// Enable ANSI escape codes on Windows consoles
 	enableVirtualTerminal()
 
 	const cyan = "\033[36m"
@@ -119,13 +193,13 @@ func printBanner() {
 	fmt.Print("\n")
 	fmt.Print(purple + bold + "     ⚡ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ⚡\n" + reset)
 	fmt.Print(purple + bold + "     ▐" + reset + cyan + "   DISTRIBOX — Distributed Virtual GPU   " + purple + "▌\n" + reset)
-	fmt.Print(purple + bold + "     ▐" + reset + "  " + green + "v0.2.0" + dim + "  |  Unified Launcher                 " + purple + "▌\n" + reset)
+	fmt.Print(purple + bold + "     ▐" + reset + "  " + green + version + dim + "  |  Unified Launcher                 " + purple + "▌\n" + reset)
 	fmt.Print(purple + bold + "     ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▌\n" + reset)
 	fmt.Print(purple + bold + "     ▐" + reset + yellow + "  One GPU. Any Device. Zero Config.     " + purple + "▌\n" + reset)
 	fmt.Print(purple + bold + "     ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▌\n" + reset)
 	fmt.Print("\n")
-	fmt.Print(dim + "  Dashboard → http://localhost:13801\n" + reset)
-	fmt.Print(dim + "  gRPC      → :13800  |  IPC → :9876\n" + reset)
+	fmt.Print(dim + "  Console  → live status panel\n" + reset)
+	fmt.Print(dim + "  gRPC     → :13800  |  API → :13801  |  IPC → :9876\n" + reset)
 	fmt.Print("\n")
 }
 
@@ -138,7 +212,7 @@ func enableVirtualTerminal() {
 	getConsoleMode := kernel32.MustFindProc("GetConsoleMode")
 	setConsoleMode := kernel32.MustFindProc("SetConsoleMode")
 
-	const STD_OUTPUT_HANDLE = ^uintptr(0) - 11 // -11
+	const STD_OUTPUT_HANDLE = ^uintptr(0) - 11
 	const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 
 	handle, _, _ := getStdHandle.Call(STD_OUTPUT_HANDLE)
@@ -153,19 +227,18 @@ func enableVirtualTerminal() {
 	setConsoleMode.Call(handle, uintptr(mode|ENABLE_VIRTUAL_TERMINAL_PROCESSING))
 }
 
-// ── Full Stack (VGPU Core + Local Worker) ──────────────
+// ── Full Stack ───────────────────────────────────────────
 
 func runFullStack() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	log.Println("[MODE] Full stack — VGPU Core + Local Worker")
+	log.Println("[MODE] Full stack — VGPU Core + Local Worker + Console")
 
-	// ── Generate cluster token ────────────────────────────
 	clusterToken := generateToken()
 	log.Printf("Cluster token: %s", clusterToken)
 
-	// ── Start VGPU Core ───────────────────────────────────
+	// Start VGPU Core
 	vgpuReady := make(chan struct{})
 	go func() {
 		if err := startVGPU(ctx, clusterToken, vgpuReady); err != nil {
@@ -173,7 +246,7 @@ func runFullStack() {
 		}
 	}()
 
-	// Wait for VGPU to be ready before starting worker
+	// Wait for VGPU to be ready
 	select {
 	case <-vgpuReady:
 		log.Println("VGPU Core ready — starting local worker...")
@@ -181,22 +254,29 @@ func runFullStack() {
 		log.Fatal("VGPU Core failed to start within 5s")
 	}
 
-	// ── Start Local Worker ────────────────────────────────
+	// Start Local Worker
 	go func() {
 		if err := startWorker(ctx, fmt.Sprintf("localhost:%d", *grpcPort), clusterToken); err != nil {
 			log.Printf("Local worker error: %v", err)
 		}
 	}()
 
-	// ── Wait for shutdown ─────────────────────────────────
+	// Start Console Panel (replaces web dashboard)
+	stopConsole := make(chan struct{})
+	console := NewConsolePanel(*httpPort)
+	go console.Run(stopConsole)
+
+	// Wait for shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 
 	log.Println("Shutting down...")
+	close(stopConsole)
 	cancel()
 	time.Sleep(500 * time.Millisecond)
-	log.Println("DistriBox stopped.")
+	clearScreen()
+	fmt.Println(cGreen + "  DistriBox stopped." + cReset)
 }
 
 // ── VGPU Core Only ──────────────────────────────────────
@@ -212,10 +292,18 @@ func runVGPUOnly() {
 		log.Fatalf("VGPU Core failed: %v", err)
 	}
 
+	// Console in VGPU-only mode
+	stopConsole := make(chan struct{})
+	console := NewConsolePanel(*httpPort)
+	go console.Run(stopConsole)
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
-	log.Println("VGPU Core stopped.")
+
+	close(stopConsole)
+	clearScreen()
+	fmt.Println(cGreen + "  VGPU Core stopped." + cReset)
 }
 
 // ── Worker Only ─────────────────────────────────────────
@@ -225,7 +313,6 @@ func runWorkerOnly() {
 
 	ctx := context.Background()
 
-	// Use explicit --orchestrator address if provided, otherwise auto-discover via mDNS
 	orchAddr := *orchestratorAddr
 	if orchAddr == "" {
 		orchAddr = fmt.Sprintf("localhost:%d", *grpcPort)
@@ -238,11 +325,15 @@ func runWorkerOnly() {
 		select {
 		case dev := <-ch:
 			if dev.Role == "orchestrator" && dev.ClusterToken != "" {
-				orchAddr = fmt.Sprintf("%s:%d", dev.Host, dev.Port)
+				if dev.Port > 0 {
+					orchAddr = fmt.Sprintf("%s:%d", dev.Host, dev.Port)
+				} else {
+					orchAddr = fmt.Sprintf("%s:%d", dev.Host, *grpcPort)
+				}
 				log.Printf("Discovered orchestrator: %s", orchAddr)
 			}
 		case <-time.After(10 * time.Second):
-			log.Printf("No orchestrator found, using %s", orchAddr)
+			log.Printf("No orchestrator found via mDNS, using %s", orchAddr)
 		}
 		mdnsDisc.StopAdvertising()
 	}
@@ -297,18 +388,21 @@ func startVGPU(ctx context.Context, clusterToken string, ready chan<- struct{}) 
 		grpcSrv.Serve(grpcListener)
 	}()
 
-	// HTTP API
+	// HTTP API (no dashboard HTML — just REST + ICD management)
 	apiHandler := server.NewAPIHandler(vram, sched, workerMon)
 	http.HandleFunc("/api/v1/status", apiHandler.HandleStatus)
 	http.HandleFunc("/api/v1/workers", apiHandler.HandleWorkers)
 	http.HandleFunc("/api/v1/device", apiHandler.HandleDevice)
-	http.HandleFunc("/", server.DashboardHandler)
-	http.HandleFunc("/sse", server.SSEHandler)
+	http.HandleFunc("/", server.StatusPageHandler) // Simple JSON status instead of dashboard
 	http.HandleFunc("/api/v1/icd/status", server.HandleICDStatus)
 	http.HandleFunc("/api/v1/icd/install", server.HandleICDInstall)
 	http.HandleFunc("/api/v1/icd/uninstall", server.HandleICDUninstall)
+	http.HandleFunc("/api/v1/display/install", server.HandleDisplayAdapterInstall)
+	http.HandleFunc("/api/v1/display/uninstall", server.HandleDisplayAdapterUninstall)
+	http.HandleFunc("/api/v1/gl/install", server.HandleGLProxyInstall)
+	http.HandleFunc("/sse", server.SSEHandler) // SSE for external monitoring
 	go func() {
-		log.Printf("Dashboard: http://localhost:%d", *httpPort)
+		log.Printf("API: http://localhost:%d", *httpPort)
 		http.ListenAndServe(fmt.Sprintf(":%d", *httpPort), nil)
 	}()
 
@@ -402,18 +496,24 @@ func startWorker(ctx context.Context, orchAddr, token string) error {
 
 // ── Subcommands ─────────────────────────────────────────
 
+func getVgpuURL() string {
+	if *vgpuURL != "" {
+		return *vgpuURL
+	}
+	return fmt.Sprintf("http://localhost:%d", *httpPort)
+}
+
 func runInstall() {
 	fmt.Println(installer.InstallICD().Output)
 }
 
 func runStatus() {
-	resp, err := httpGet(fmt.Sprintf("http://localhost:%d/api/v1/status", *httpPort))
+	resp, err := httpGet(getVgpuURL() + "/api/v1/status")
 	if err != nil {
 		fmt.Println("VGPU Core not running. Start with: distribox.exe")
 		return
 	}
 
-	// Parse JSON and format output
 	var status struct {
 		Device      map[string]interface{} `json:"device"`
 		WorkerCount int                    `json:"worker_count"`
@@ -424,11 +524,11 @@ func runStatus() {
 			CPU    float64 `json:"cpu_pct"`
 			GPU    float64 `json:"gpu_pct"`
 			RAM    float64 `json:"ram_pct"`
+			Score  float64 `json:"score"`
 		} `json:"workers"`
 		Uptime string `json:"uptime"`
 	}
 	if err := json.Unmarshal(resp, &status); err != nil {
-		// Fall back to raw output if JSON parse fails
 		fmt.Println(string(resp))
 		return
 	}
@@ -447,14 +547,258 @@ func runStatus() {
 	}
 	fmt.Printf("║  Workers:     %-2d                        ║\n", status.WorkerCount)
 	fmt.Println("╠════════════════════════════════════════════╣")
-
 	if len(status.Workers) > 0 {
 		fmt.Println("║  Worker List:                              ║")
 		for _, w := range status.Workers {
-			fmt.Printf("║    %-20s %-10s ║\n", w.Name, w.Status)
+			icon := "●"
+			if w.Status != "idle" {
+				icon = "○"
+			}
+			fmt.Printf("║    %s %-18s %-10s ║\n", icon, truncateStr(w.Name, 18), w.Status)
 		}
 	}
 	fmt.Println("╚════════════════════════════════════════════╝")
+}
+
+// ── Device subcommands ──────────────────────────────────
+
+func handleDevice(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: distribox device <create|status|remove>")
+		os.Exit(1)
+	}
+	switch args[0] {
+	case "create":
+		deviceCreate(args[1:])
+	case "status":
+		deviceStatusCmd(args[1:])
+	case "remove":
+		deviceRemoveCmd(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown device command: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func deviceCreate(args []string) {
+	fs := flag.NewFlagSet("device create", flag.ExitOnError)
+	name := fs.String("name", "DistriBox Virtual GPU", "Device name")
+	vramGB := fs.Float64("vram", 0, "VRAM size in GB")
+	cu := fs.Int("cu", 0, "Compute units")
+	clock := fs.Int("clock", 0, "Clock MHz")
+	auto := fs.Bool("auto", false, "Auto-compute from workers")
+	url := fs.String("vgpu-url", getVgpuURL(), "VGPU Core URL")
+	fs.Parse(args)
+
+	if *auto {
+		fmt.Println("Auto-configuring virtual GPU from connected workers...")
+		resp, err := httpGet(*url + "/api/v1/workers")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot reach VGPU Core at %s: %v\n", *url, err)
+			os.Exit(1)
+		}
+
+		var data struct {
+			Workers []struct {
+				CapabilityScore float64 `json:"capability_score"`
+				AvailableRAMMB  int     `json:"available_ram_mb"`
+			} `json:"workers"`
+		}
+		json.Unmarshal(resp, &data)
+
+		totalRAM := 0
+		totalScore := 0.0
+		for _, w := range data.Workers {
+			totalRAM += w.AvailableRAMMB
+			totalScore += w.CapabilityScore
+		}
+
+		if len(data.Workers) == 0 {
+			fmt.Println("No workers connected — using default specs")
+			*vramGB = 8
+			*cu = 2048
+		} else {
+			*vramGB = float64(totalRAM) * 0.8 / 1024.0
+			*cu = int(totalScore * 1000)
+			if *vramGB < 1 {
+				*vramGB = 1
+			}
+			if *cu < 64 {
+				*cu = 64
+			}
+			fmt.Printf("Detected %d workers, %.1f GB RAM, score=%.1f\n",
+				len(data.Workers), float64(totalRAM)/1024.0, totalScore)
+		}
+	}
+
+	spec := map[string]interface{}{
+		"name":               *name,
+		"vram_total":         uint64(*vramGB * 1024 * 1024 * 1024),
+		"compute_units":      *cu,
+		"max_clock_mhz":      *clock,
+		"max_work_group_size": 256,
+		"max_work_item_sizes": [3]uint64{1024, 1024, 64},
+	}
+
+	body, _ := json.Marshal(spec)
+	_, err := httpPost(*url+"/api/v1/device", "application/json", body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error configuring device: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Virtual GPU created: %s\n", *name)
+	fmt.Printf("  VRAM: %.1f GB | CU: %d | Clock: %d MHz\n", *vramGB, *cu, *clock)
+}
+
+func deviceStatusCmd(args []string) {
+	fs := flag.NewFlagSet("device status", flag.ExitOnError)
+	url := fs.String("vgpu-url", getVgpuURL(), "VGPU Core URL")
+	fs.Parse(args)
+
+	resp, err := httpGet(*url + "/api/v1/status")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: cannot reach VGPU Core: %v\n", err)
+		os.Exit(1)
+	}
+
+	var data struct {
+		Device struct {
+			Name         string `json:"name"`
+			VRAMTotalMB  int    `json:"vram_total_mb"`
+			VRAMUsedMB   int    `json:"vram_used_mb"`
+			ComputeUnits int    `json:"compute_units"`
+			ClockMHz     int    `json:"clock_mhz"`
+			BufferCount  int    `json:"buffer_count"`
+		} `json:"device"`
+		Workers []struct {
+			ID     string  `json:"id"`
+			Name   string  `json:"name"`
+			Score  float64 `json:"score"`
+			Status string  `json:"status"`
+		} `json:"workers"`
+		ActiveWorkers int `json:"active_workers"`
+	}
+	json.Unmarshal(resp, &data)
+
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("Virtual Device: %s\n", data.Device.Name)
+	fmt.Printf("  VRAM: %d MB used / %d MB total\n", data.Device.VRAMUsedMB, data.Device.VRAMTotalMB)
+	fmt.Printf("  CU: %d | Clock: %d MHz | Buffers: %d\n",
+		data.Device.ComputeUnits, data.Device.ClockMHz, data.Device.BufferCount)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("Workers: %d active\n", data.ActiveWorkers)
+	for _, w := range data.Workers {
+		icon := "●"
+		if w.Status != "idle" {
+			icon = "○"
+		}
+		fmt.Printf("  %s %s (%s) score=%.2f [%s]\n", icon, w.Name, w.ID, w.Score, w.Status)
+	}
+}
+
+func deviceRemoveCmd(args []string) {
+	fs := flag.NewFlagSet("device remove", flag.ExitOnError)
+	url := fs.String("vgpu-url", getVgpuURL(), "VGPU Core URL")
+	fs.Parse(args)
+
+	fmt.Print("Remove virtual GPU device? [y/N] ")
+	var answer string
+	fmt.Scanln(&answer)
+	if answer != "y" && answer != "Y" {
+		fmt.Println("Cancelled.")
+		return
+	}
+
+	req, _ := http.NewRequest("DELETE", *url+"/api/v1/device", nil)
+	http.DefaultClient.Do(req)
+	fmt.Println("Virtual GPU device removed.")
+}
+
+// ── Worker subcommands ──────────────────────────────────
+
+func handleWorker(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: distribox worker <list|set>")
+		os.Exit(1)
+	}
+	switch args[0] {
+	case "list":
+		workerListCmd(args[1:])
+	case "set":
+		workerSetCmd(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown worker command: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func workerListCmd(args []string) {
+	fs := flag.NewFlagSet("worker list", flag.ExitOnError)
+	url := fs.String("vgpu-url", getVgpuURL(), "VGPU Core URL")
+	fs.Parse(args)
+	deviceStatusCmd([]string{"--vgpu-url", *url})
+}
+
+func workerSetCmd(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: distribox worker set <worker-id> [--intensity <0-1>] [--only-charging] [--max-cores <n>] [--max-ram <mb>]")
+		os.Exit(1)
+	}
+
+	workerID := args[0]
+	fs := flag.NewFlagSet("worker set", flag.ExitOnError)
+	intensity := fs.Float64("intensity", 0, "Compute intensity")
+	onlyCharging := fs.Bool("only-charging", false, "Only when charging")
+	maxCores := fs.Int("max-cores", 0, "Max CPU cores")
+	maxRAM := fs.Int("max-ram", 0, "Max RAM MB")
+	url := fs.String("vgpu-url", getVgpuURL(), "VGPU Core URL")
+	fs.Parse(args[1:])
+
+	policy := map[string]interface{}{}
+	if *intensity > 0 {
+		policy["intensity"] = *intensity
+	}
+	if *onlyCharging {
+		policy["only_when_charging"] = true
+	}
+	if *maxCores > 0 {
+		policy["max_cpu_cores"] = *maxCores
+	}
+	if *maxRAM > 0 {
+		policy["max_ram_mb"] = *maxRAM
+	}
+
+	body, _ := json.Marshal(policy)
+	reqURL := fmt.Sprintf("%s/api/v1/workers/%s/policy", *url, workerID)
+	_, err := httpPost(reqURL, "application/json", body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Worker %s updated.\n", workerID)
+}
+
+// ── HTTP helpers ────────────────────────────────────────
+
+func httpGet(url string) ([]byte, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
+func httpPost(url string, contentType string, body []byte) ([]byte, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, contentType, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 // ── Helpers ─────────────────────────────────────────────
@@ -471,14 +815,4 @@ func getDefaultName() string {
 		return hostname
 	}
 	return fmt.Sprintf("PC-%s", runtime.GOARCH)
-}
-
-func httpGet(url string) ([]byte, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	// Read full body without size limit
-	return io.ReadAll(resp.Body)
 }

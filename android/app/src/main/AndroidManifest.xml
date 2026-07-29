@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.distribox.worker">
 
     <!-- Network for gRPC + mDNS -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -12,12 +13,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Keep CPU awake during computation -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:label="DistriBox Worker"
-        android:debuggable="false"
+        android:debuggable="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.DistriBox">
+        android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity
             android:name=".MainActivity"

@@ -477,7 +477,7 @@ func (s *IPCServer) dispatchViaGRPC(msg IPCMessage, reqID, taskID string, subTas
 				Args:             protoArgs,
 			},
 			InputBufferIds:  bufferArgs,
-			OutputBufferIds: bufferArgs[len(bufferArgs)-1:], // last buffer is output
+			OutputBufferIds: safeLast(bufferArgs), // last buffer is output
 		}
 
 		err := s.orchestrator.AssignTask(st.WorkerID, subTask)
@@ -684,6 +684,13 @@ func totalBytes(data map[string][]byte) int64 {
 		total += int64(len(d))
 	}
 	return total
+}
+
+func safeLast(s []string) []string {
+	if len(s) == 0 {
+		return nil
+	}
+	return s[len(s)-1:]
 }
 
 func mustMarshal(v interface{}) string {

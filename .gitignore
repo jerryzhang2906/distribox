@@ -64,3 +64,4 @@ opengl32_orig.dll
 
 # Logs
 *.log
+android/app/src/main/assets/distribox-worker

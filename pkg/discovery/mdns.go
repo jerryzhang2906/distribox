@@ -360,13 +360,14 @@ func buildQuery(service string) []byte {
 }
 
 func parseMDNSResponse(data []byte, targetService string) *DeviceInfo {
-	// Minimal parser: scan for TXT records containing _distribox metadata
 	_ = encodeDNSName(targetService)
 
-	// Find all TXT records by scanning the response
+	info := &DeviceInfo{}
+	hostnameMap := make(map[string]string) // name → IP
+
 	offset := 0
 	for offset < len(data) {
-		_, consumed := parseDNSName(data, offset)
+		name, consumed := parseDNSName(data, offset)
 		if consumed == 0 {
 			break
 		}
@@ -382,27 +383,77 @@ func parseMDNSResponse(data []byte, targetService string) *DeviceInfo {
 			break
 		}
 
-		if rtype == dnsTypeTXT {
+		switch rtype {
+		case dnsTypeTXT:
 			txtMap := parseTXT(data[offset : offset+int(rdLen)])
 			if txtMap["ver"] != "" {
-				info := &DeviceInfo{
-					ProtocolVersion: txtMap["ver"],
-					Role:            txtMap["role"],
-					Name:            txtMap["name"],
-					Arch:            txtMap["arch"],
-					OS:              txtMap["os"],
-					HasGPU:          txtMap["gpu"] == "yes",
-					ClusterToken:    txtMap["token"],
-				}
+				info.ProtocolVersion = txtMap["ver"]
+				info.Role = txtMap["role"]
+				info.Name = txtMap["name"]
+				info.Arch = txtMap["arch"]
+				info.OS = txtMap["os"]
+				info.HasGPU = txtMap["gpu"] == "yes"
+				info.ClusterToken = txtMap["token"]
 				fmt.Sscanf(txtMap["mem"], "%d", &info.TotalRAMMB)
-				if info.ProtocolVersion != "" && info.Name != "" {
-					return info
-				}
+			}
+		case dnsTypeSRV:
+			// SRV RDATA: Priority(2) + Weight(2) + Port(2) + Target(name)
+			if rdLen >= 6 {
+				info.Port = int(binary.BigEndian.Uint16(data[offset+4 : offset+6]))
+				targetName, _ := parseDNSName(data, offset+6)
+				hostnameMap[string(name)] = dnsNameToString(targetName)
+			}
+		case dnsTypeA:
+			// A RDATA: IP (4 bytes)
+			if rdLen >= 4 {
+				ip := net.IPv4(data[offset], data[offset+1], data[offset+2], data[offset+3])
+				hostnameMap[string(name)] = ip.String()
 			}
 		}
+
 		offset += int(rdLen)
 	}
+
+	// Resolve Host from collected A/SRV records
+	if info.Host == "" {
+		// Try to find any A record IP
+		for _, ip := range hostnameMap {
+			if net.ParseIP(ip) != nil {
+				info.Host = ip
+				break
+			}
+		}
+	}
+	// Fallback: if we still have no Host, the caller can try local subnet
+	if info.Host == "" {
+		info.Host = "unknown"
+	}
+
+	if info.ProtocolVersion != "" && info.Name != "" {
+		return info
+	}
 	return nil
+}
+
+// dnsNameToString converts an encoded DNS name to a human-readable string
+func dnsNameToString(name []byte) string {
+	if len(name) == 0 {
+		return ""
+	}
+	parts := []string{}
+	offset := 0
+	for offset < len(name) {
+		length := int(name[offset])
+		if length == 0 {
+			break
+		}
+		if offset+1+length > len(name) {
+			break
+		}
+		parts = append(parts, string(name[offset+1:offset+1+length]))
+		offset += 1 + length
+	}
+	return strings.Join(parts, ".")
 }
 
 func parseDNSName(data []byte, offset int) ([]byte, int) {

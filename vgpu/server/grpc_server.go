@@ -135,20 +135,21 @@ func (s *OrchestratorService) ControlChannel(stream distriv1.Orchestrator_Contro
 	var workerID string
 	var ws *WorkerSession
 
+	// Use a channel to signal when workerID is assigned (instead of busy-waiting)
+	workerReady := make(chan string, 1)
+
 	// Send goroutine: reads from sendCh and writes to stream
 	sendDone := make(chan struct{})
 	go func() {
 		// Wait until workerID is set before sending
-		for workerID == "" {
-			time.Sleep(10 * time.Millisecond)
-			select {
-			case <-sendDone:
-				return
-			default:
-			}
+		var id string
+		select {
+		case id = <-workerReady:
+		case <-sendDone:
+			return
 		}
 
-		ws = s.getWorker(workerID)
+		ws = s.getWorker(id)
 		if ws == nil {
 			return
 		}
@@ -162,7 +163,7 @@ func (s *OrchestratorService) ControlChannel(stream distriv1.Orchestrator_Contro
 					return
 				}
 				if err := stream.Send(msg); err != nil {
-					log.Printf("ControlChannel send to %s failed: %v", workerID, err)
+					log.Printf("ControlChannel send to %s failed: %v", id, err)
 					return
 				}
 			}
@@ -191,6 +192,11 @@ func (s *OrchestratorService) ControlChannel(stream distriv1.Orchestrator_Contro
 					ws.stream = stream
 					ws.connected = true
 					ws.mu.Unlock()
+				}
+				// Signal the send goroutine that workerID is ready
+				select {
+				case workerReady <- workerID:
+				default:
 				}
 				log.Printf("ControlChannel: worker %s stream established", workerID)
 			}

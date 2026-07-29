@@ -1,20 +1,21 @@
 /*
- * vgpu/server/dashboard.go — Web dashboard + SSE push + ICD management
+ * vgpu/server/dashboard.go — HTTP API + ICD management
  *
- * Serves the DistriBox Control Panel at http://localhost:13801/
- * SSE pushes real-time worker/task updates to the browser.
+ * Provides REST API for console panel and external clients.
+ * The web dashboard HTML has been removed — replaced by console UI.
+ * SSE hub retained for external clients that want real-time push.
  */
 
 package server
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -23,18 +24,30 @@ import (
 	"github.com/distribox/vgpu/monitor"
 )
 
-//go:embed dashboard.html
-var dashboardHTML []byte
+// ── Status page (simple JSON, replaces dashboard HTML) ──
 
-// ── Dashboard HTTP handler ─────────────────────────────
-
-func DashboardHandler(w http.ResponseWriter, r *http.Request) {
+func StatusPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(dashboardHTML)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"service":  "DistriBox VGPU Core",
+		"version":  "v0.3.0",
+		"endpoints": []string{
+			"/api/v1/status",
+			"/api/v1/workers",
+			"/api/v1/device",
+			"/api/v1/icd/status",
+			"/api/v1/icd/install",
+			"/api/v1/icd/uninstall",
+			"/api/v1/display/install",
+			"/api/v1/display/uninstall",
+			"/api/v1/gl/install",
+		},
+	})
 }
 
 // ── SSE (Server-Sent Events) Hub ──────────────────────
@@ -211,7 +224,6 @@ func HandleICDInstall(w http.ResponseWriter, r *http.Request) {
 	proxySrc := os.Getenv("TEMP") + "\\OpenCL_proxy.dll"
 	icdSrc := os.Getenv("LOCALAPPDATA") + "\\DistriBox\\distribox_icd.dll"
 
-	// Build PowerShell install script
 	ps := fmt.Sprintf(
 		`$elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator");
 if(!$elevated){Write-Host "NEED_ADMIN";exit 1}
@@ -267,7 +279,7 @@ if(Test-Path '%s'){Copy-Item -Force '%s' '%s';Write-Host "RESTORED"}else{Write-H
 	})
 }
 
-// ── Display Adapter (Device Manager / Task Manager) ────
+// ── Display Adapter ────────────────────────────────────
 
 func HandleDisplayAdapterInstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -275,7 +287,6 @@ func HandleDisplayAdapterInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create registry entries for a software display adapter
 	ps := `
 $elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator");
 if(!$elevated){Write-Host "NEED_ADMIN";exit 1}
@@ -288,7 +299,6 @@ Set-ItemProperty -Path $key -Name "DriverVersion" -Value "1.0.0.0" -Force;
 Set-ItemProperty -Path $key -Name "DriverDate" -Value "2026-07-27" -Force;
 Set-ItemProperty -Path $key -Name "MatchingDeviceId" -Value "ROOT\DISTRIBOX\0000" -Force;
 Set-ItemProperty -Path $key -Name "HardwareInformation.MemSize" -Value 0x100000000 -Force;
-# Also add to WMI-accessible GPU list via PNP
 $pnpKey="HKLM:\SYSTEM\CurrentControlSet\Enum\ROOT\DISTRIBOX\0000";
 New-Item -Path $pnpKey -Force | Out-Null;
 Set-ItemProperty -Path $pnpKey -Name "DeviceDesc" -Value "DistriBox Virtual GPU (NVIDIA Compatible)" -Force;
@@ -305,7 +315,7 @@ Write-Host "DISPLAY_ADAPTER_INSTALLED"
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
 		"output":  result,
-		"message": "Display adapter registered. Reboot or restart 'Desktop Window Manager' to see in Task Manager.",
+		"message": "Display adapter registered. Reboot for Task Manager visibility.",
 	})
 }
 
@@ -333,8 +343,6 @@ Write-Host "DISPLAY_ADAPTER_REMOVED"
 	})
 }
 
-// ── Helpers ────────────────────────────────────────────
-
 // ── OpenGL Proxy Install ──────────────────────────────
 
 func HandleGLProxyInstall(w http.ResponseWriter, r *http.Request) {
@@ -344,18 +352,27 @@ func HandleGLProxyInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sys32 := os.Getenv("SystemRoot") + "\\System32"
-	proxySrc := "I:\\game\\distribox\\build\\gl_proxy\\distri_opengl32.dll"
 	backupPath := sys32 + "\\opengl32_orig.dll"
 	openGLPath := sys32 + "\\opengl32.dll"
+
+	// Find proxy DLL relative to executable or in build directory
+	proxySrc := findProxyDLL("distri_opengl32.dll")
 	proxyDest := sys32 + "\\opengl32_proxy.dll"
 
-	// Copy proxy to System32 first (different name, no conflict)
+	if proxySrc == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "distri_opengl32.dll not found. Build with 'make dist-windows' first.",
+		})
+		return
+	}
+
 	ps := fmt.Sprintf(`
 $elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")
 if(!$elevated){Write-Host "NEED_ADMIN";exit 1}
 if(!(Test-Path '%s')){Copy-Item '%s' '%s' -Force;Write-Host "BACKUP_OK"}else{Write-Host "BACKUP_EXISTS"}
 Copy-Item -Force '%s' '%s';Write-Host "PROXY_COPIED"
-# Schedule replacement on next reboot
 $regPath="HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager"
 $val=Get-ItemProperty -Path $regPath -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
 $ops=@()
@@ -379,9 +396,29 @@ Write-Host "REBOOT_SCHEDULED — restart to complete GL proxy install"`,
 	})
 }
 
+// ── Helpers ────────────────────────────────────────────
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// findProxyDLL searches for a DLL relative to the executable or in common build locations
+func findProxyDLL(name string) string {
+	// Try executable directory first
+	exe, _ := os.Executable()
+	exeDir := filepath.Dir(exe)
+	candidates := []string{
+		filepath.Join(exeDir, name),
+		filepath.Join(exeDir, "build", "gl_proxy", name),
+		filepath.Join(exeDir, "..", "build", "gl_proxy", name),
+	}
+	for _, c := range candidates {
+		if fileExists(c) {
+			return c
+		}
+	}
+	return ""
 }
 
 // ── Start dashboard services ────────────────────────────
@@ -397,5 +434,5 @@ func StartDashboardCollector(sched *scheduler.Scheduler, vram *mem.VRAMManager, 
 		}
 	}()
 
-	log.Printf("Dashboard ready — open http://localhost:13801/")
+	log.Printf("API ready — http://localhost:13801/ (JSON status)")
 }
