@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://jerryzhang2906.github.io/distribox/sitemap.xml
