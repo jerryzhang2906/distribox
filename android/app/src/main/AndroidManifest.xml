@@ -1,26 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.distribox.worker">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Network for gRPC + mDNS -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <!-- Foreground service for persistent worker -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="DistriBox Worker"
-        android:debuggable="true"
+        android:debuggable="false"
         android:extractNativeLibs="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.DistriBox">
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:configChanges="orientation|screenSize"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".WorkerService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
     </application>
 </manifest>

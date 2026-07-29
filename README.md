@@ -1,201 +1,134 @@
 <p align="center">
-  <h1 align="center">🔮 DistriBox — 分布式虚拟 GPU</h1>
-  <p align="center">
-    把多台设备的算力聚合成一个虚拟 GPU，让任何 AI 应用无需修改即可使用分布式集群
-  </p>
+  <br>
+  <img src="https://img.shields.io/badge/DistriBox-v0.2.0-00d4ff?style=for-the-badge" alt="version">
+  <br><br>
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=32&duration=3000&pause=1000&color=00D4FF&center=true&vCenter=true&width=600&lines=%F0%9F%94%AE+DistriBox;Distributed+Virtual+GPU;One+GPU.+Any+Device." alt="DistriBox" />
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Android-blue" alt="platform">
-  <img src="https://img.shields.io/badge/language-Go%20%7C%20C-orange" alt="language">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/status-active-brightgreen" alt="status">
+  <b>把多台设备的算力聚合成一个虚拟 GPU</b><br>
+  <sub>AI 应用无需修改，自动使用局域网内所有设备的 GPU 算力</sub>
 </p>
 
----
+<p align="center">
+  <a href="https://github.com/jerryzhang2906/distribox/releases"><img src="https://img.shields.io/github/v/release/jerryzhang2906/distribox?color=00d4ff&style=flat-square" alt="release"></a>
+  <a href="https://github.com/jerryzhang2906/distribox/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Android-blue?style=flat-square" alt="platform">
+  <img src="https://img.shields.io/badge/language-Go%20%7C%20C-orange?style=flat-square" alt="language">
+  <a href="https://github.com/jerryzhang2906/distribox/stargazers"><img src="https://img.shields.io/github/stars/jerryzhang2906/distribox?style=flat-square" alt="stars"></a>
+</p>
+
+<hr>
 
 ## 🤔 这是什么？
 
-**DistriBox** 把你的电脑和手机变成一台"虚拟 GPU"。你在电脑上运行 AI 应用（如 Ollama、PyTorch），手机会自动贡献算力——应用完全不知道自己实际是在用一台"拼凑出来的 GPU"。
+> **就像蓝牙耳机自动连接手机一样，你的 AI 应用自动使用局域网里所有设备的 GPU 算力。**
 
-### 一句话解释
+DistriBox 是一个**分布式虚拟 GPU 平台**。它把多台设备（PC、手机）的 GPU/CPU 算力通过 OpenCL ICD 技术聚合成一块"虚拟显卡"，让任何 OpenCL 应用（Ollama、PyTorch、Stable Diffusion）**无需修改代码**即可使用分布式集群。
 
-> 就像蓝牙耳机自动连接手机一样，你的 AI 应用自动使用局域网里所有设备的 GPU 算力。
+```
+你电脑上的 AI 应用（Ollama / PyTorch / 任意 OpenCL 应用）
+            │
+            ▼
+   ┌────────────────────┐
+   │  distribox_icd.dll  │  ← 系统级拦截：应用不知道下面是虚拟的
+   │  (OpenCL ICD)        │
+   └────────┬───────────┘
+            │ TCP (127.0.0.1:9876)
+            ▼
+   ┌────────────────────┐
+   │  distribox.exe      │  ← VGPU Core：调度 + 拆分 + 合并
+   │  仪表盘 :13801       │
+   └────────┬───────────┘
+            │ gRPC (WiFi)
+     ┌──────┴──────┐
+     ▼              ▼
+ ┌────────┐   ┌────────────┐
+ │ PC     │   │ 📱 Android  │
+ │ Worker │   │ Worker      │
+ │ i7 CPU │   │ Mali GPU    │
+ └────────┘   └────────────┘
+```
 
 ### 能做什么？
 
 | 场景 | 效果 |
 |------|------|
-| 🤖 **跑大模型** | 手机 GPU 帮你加速 LLM 推理 |
-| 🎮 **AI 绘画** | Stable Diffusion 利用所有设备 |
+| 🤖 **跑大模型** | 手机 GPU 加速 LLM 推理（Ollama, llama.cpp） |
+| 🎨 **AI 绘画** | Stable Diffusion 并行利用所有设备 |
 | 🧪 **科学计算** | 多设备分布式矩阵运算 |
+| 🎮 **游戏渲染** | Vulkan/OpenGL 分布式渲染（实验性） |
 
 ---
 
-## 📦 快速开始（小白版）
+## 📦 快速开始
 
 ### 第一步：下载
 
 从 [Releases](https://github.com/jerryzhang2906/distribox/releases) 下载最新版本：
 
-- **PC 端**：`distribox-windows.zip`（解压即用）
-- **手机端**：`distribox-worker.apk`（安装到手机）
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| 🖥️ **PC (Windows)** | [`distribox-windows.zip`](https://github.com/jerryzhang2906/distribox/releases/latest) | 解压即用 |
+| 📱 **Android** | [`distribox-worker.apk`](https://github.com/jerryzhang2906/distribox/releases/latest) | 安装到手机 |
 
 ### 第二步：启动 PC
 
 ```powershell
-# 双击运行，或者命令行：
+# 解压后双击运行，或命令行：
 .\distribox.exe
 ```
 
 你会看到：
+
 ```
-╔══════════════════════════════════════════════╗
-║       DistriBox — Distributed Virtual GPU    ║
-║       v0.2.0  |  Unified Launcher            ║
-╚══════════════════════════════════════════════╝
-Dashboard: http://localhost:13801
+     ⚡ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ⚡
+     ▐   DISTRIBOX — Distributed Virtual GPU   ▐
+     ▐  v0.2.0  |  Unified Launcher            ▐
+     ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐
+     ▐  One GPU. Any Device. Zero Config.      ▐
+     ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐
+
+  Dashboard → http://localhost:13801
 ```
 
-打开浏览器访问 `http://localhost:13801` 就能看到仪表盘。
+打开浏览器访问 `http://localhost:13801`，你会看到实时的集群仪表盘。
 
 ### 第三步：连接手机
 
-1. 把 `distribox-worker.apk` 装到手机上
-2. 确保手机和电脑在**同一个 WiFi**
-3. 打开 App，点 **START WORKER**
-4. 手机会自动发现电脑并连接
+1. 安装 `distribox-worker.apk` 到 Android 手机
+2. 确保手机和电脑在**同一 WiFi**
+3. 打开 App → 点 **START WORKER**
+4. 手机自动通过 **mDNS** 发现电脑并连接
 
-> 💡 **不需要任何配置！** 手机和电脑在同一个 WiFi 下会自动互相发现。
+> 💡 **零配置！** 同一 WiFi 下全自动互相发现。
 
 ### 第四步：使用
 
-现在你的"虚拟 GPU"已经就绪。任何使用 OpenCL 的应用都会自动使用它：
+现在虚拟 GPU 已就绪，任何 OpenCL 应用都能使用：
 
 ```powershell
-# 示例：用 Ollama 跑模型
-ollama run phi3:mini "解释量子计算"
+# 用 Ollama 跑模型 — 自动利用手机的 Mali GPU 加速
+ollama run qwen2:7b "解释量子计算"
 
-# GPU-Z 可以看到虚拟 GPU
+# GPU-Z 里可以看到虚拟 GPU
 gpu-z.exe
-```
-
----
-
-## 🏗️ 给开发者：从源码构建
-
-### 环境要求
-
-| 工具 | 用途 | 安装方式 |
-|------|------|----------|
-| **Go** 1.21+ | 主程序 | `winget install GoLang.Go` |
-| **Zig** 0.13+ | C 编译器 | `winget install zig.zig` |
-| **CMake** 3.16+ | C 构建系统 | `winget install Kitware.CMake` |
-| **Ninja** | 快速构建 | `winget install Ninja-build.Ninja` |
-| **Android NDK** | 手机端编译 | Android Studio 自带 |
-
-### 一键构建
-
-```bash
-# 克隆仓库
-git clone https://github.com/jerryzhang2906/distribox.git
-cd distribox
-
-# 构建 PC 端（Windows）
-make build          # 编译所有组件
-make dist-windows   # 打包发布版本
-
-# 构建手机端（需要 Android NDK）
-$env:ANDROID_NDK_HOME = "C:\Users\...\AppData\Local\Android\Sdk\ndk\27.1.12297006"
-.\scripts\build_android.ps1
-```
-
-### 项目结构
-
-```
-distribox/
-├── cmd/
-│   ├── distribox/       # 🚀 统一启动器（一个 exe 替代全部）
-│   ├── worker/           # 🔧 Worker Agent（算力提供者）
-│   └── cli/              # 💻 命令行管理工具
-├── vgpu/                 # 🧠 Virtual GPU Core（核心调度引擎）
-│   ├── server/           # gRPC + HTTP + IPC 服务
-│   ├── scheduler/        # 任务拆分与调度
-│   ├── mem/              # 虚拟 VRAM + KV Cache
-│   ├── calibrate/        # 自动校准（集群算力匹配 GPU 型号）
-│   └── monitor/          # Worker 健康监控
-├── icd/                  # 🔌 OpenCL ICD 拦截层（C 语言）
-│   └── api/              # 50+ OpenCL API 实现
-├── engine/               # ⚡ 计算引擎（C + OpenCL）
-├── proto/                # 📡 gRPC 协议定义
-├── pkg/
-│   ├── discovery/        # 📡 mDNS 局域网自动发现
-│   └── protocol/         # 生成的 protobuf 代码
-├── android/              # 📱 Android APK 项目
-├── vk_layer/             # 🎮 Vulkan 拦截层
-├── cuda_proxy/           # 🎯 CUDA 代理
-├── hook/                 # 🪝 OpenGL Hook（Minecraft 等）
-├── gl_proxy/             # 🖼️ OpenGL 系统代理
-├── examples/             # 📖 示例代码
-│   ├── inference/        # Transformer 推理 Demo
-│   ├── distributed/      # 分布式计算测试
-│   └── e2e/              # 端到端验证
-└── scripts/              # 🔨 构建脚本
 ```
 
 ---
 
 ## 🧠 工作原理
 
-### 整体架构
-
-```
-你电脑上的 AI 应用（Ollama / PyTorch / 任意 OpenCL 应用）
-            ↓
-    ┌───────────────────┐
-    │  OpenCL API 调用   │  ← 应用完全不知道下面是虚拟的
-    └───────┬───────────┘
-            ↓
-    ┌───────────────────┐
-    │  distribox_icd.dll │  ← 拦截层：截获所有 GPU 调用
-    │  (系统级安装)       │
-    └───────┬───────────┘
-            ↓ TCP (127.0.0.1:9876)
-    ┌───────────────────┐
-    │  distribox.exe     │  ← VGPU Core：调度引擎
-    │  仪表盘 :13801      │
-    └───────┬───────────┘
-            ↓ gRPC (WiFi)
-    ┌───────┴───────────┐
-    ↓                   ↓
-┌──────────┐     ┌──────────────┐
-│ PC       │     │ 📱 手机       │
-│ Worker   │     │ Worker (APK) │
-│ i7 CPU   │     │ Mali GPU     │
-└──────────┘     └──────────────┘
-```
-
-### 一次推理的数据流
-
-```
-1. 应用调用 clEnqueueNDRangeKernel(gelu, input, output)
-2. ICD 拦截 → 打包成 JSON → 发给 VGPU Core
-3. VGPU Core 拆分任务：手机做一半，PC 做一半
-4. 两个 Worker 各自计算 → 结果回传
-5. VGPU Core 合并结果 → 返回给应用
-6. 应用完全无感知，耗时 ≈ max(手机,PC) + 网络延迟
-```
-
 ### 14 个 AI 内核
 
 | 内核 | 用途 | CPU | GPU |
-|------|------|-----|-----|
+|------|------|:---:|:---:|
 | `matmul` | 矩阵乘法（QKV 投影、FFN） | ✅ | ✅ |
-| `gelu` | GPT/LLaMA 激活函数 | ✅ | ✅ |
+| `gelu` | GPT/LLaMA 激活 | ✅ | ✅ |
 | `rms_norm` | LLaMA/Mistral 归一化 | ✅ | ✅ |
 | `layer_norm` | Transformer 归一化 | ✅ | ✅ |
 | `softmax` | 注意力分数 | ✅ | ✅ |
-| `rope` | 旋转位置编码 | ✅ | ✅ |
+| `rope` | 旋转位置编码 (RoPE) | ✅ | ✅ |
 | `relu` | 激活函数 | ✅ | ✅ |
 | `sigmoid` | 门控函数 | ✅ | ✅ |
 | `element_wise_mul` | Hadamard 积 | ✅ | ✅ |
@@ -205,154 +138,208 @@ distribox/
 | `add_bias` | 偏置加法 | ✅ | ✅ |
 | `vector_add` | 向量加法 | ✅ | ✅ |
 
+### 一次推理的旅程
+
+```
+1. Ollama 调用 clEnqueueNDRangeKernel(gelu, input, output)
+2. distribox_icd.dll 拦截 → JSON → VGPU Core
+3. VGPU Core 拆分: PC 做 60%，手机做 40%
+4. 并行执行 → 结果回传
+5. VGPU Core 合并 → 返回给 Ollama
+6. Ollama 完全无感知，延迟 ≈ max(PC, 手机) + 5ms 网络
+```
+
 ---
 
-## 🔧 命令行参考
+## 🔧 命令行
 
 ```powershell
-# 完整模式（VGPU Core + Worker 一起启动）
+# 完整模式（VGPU Core + Worker 同时启动）
 .\distribox.exe
 
 # 只启动 VGPU Core（让其他设备连过来）
 .\distribox.exe --mode vgpu
 
-# 只启动 Worker（连接到另一台电脑的 VGPU）
+# 只启动 Worker（连接到远程 VGPU）
 .\distribox.exe --mode worker --orchestrator 192.168.1.100:13800
 
-# 安装 GPU 拦截层（需要管理员权限）
+# 安装 GPU 拦截层（管理员权限）
 .\distribox.exe install
 
 # 查看集群状态
 .\distribox.exe status
 
-# 查看版本
+# 版本信息
 .\distribox.exe version
 ```
 
-### 可选参数
+### 参数参考
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--grpc-port` | 13800 | Worker 连接端口 |
-| `--http-port` | 13801 | 仪表盘端口 |
-| `--ipc-addr` | 127.0.0.1:9876 | ICD 通信地址 |
-| `--intensity` | 0.8 | CPU/GPU 使用强度 (0-1) |
+| `--grpc-port` | 13800 | Worker gRPC 端口 |
+| `--http-port` | 13801 | Dashboard 端口 |
+| `--ipc-addr` | 127.0.0.1:9876 | ICD ↔ VGPU Core 通信 |
+| `--intensity` | 0.8 | 算力使用强度 (0-1) |
 | `--name` | 自动检测 | Worker 显示名称 |
-
----
-
-## 📱 Android APK
-
-### 安装
-
-```bash
-# 通过 USB 安装
-adb install build/distribox-worker.apk
-
-# 或直接传 APK 到手机安装
-```
-
-### 功能
-
-- 打开 App → 显示设备信息（CPU、GPU、内存）
-- 点 **START WORKER** → 自动连接局域网中的 VGPU Core
-- 滑动条调节算力贡献比例
-- 后台运行，通知栏显示状态
-
-### 自构建
-
-```powershell
-$env:ANDROID_NDK_HOME = "你的NDK路径"
-.\scripts\build_android.ps1
-```
-
----
-
-## ❓ 常见问题
-
-### Q: 会影响电脑正常使用吗？
-**A:** 不会。Worker 只在空闲算力上运行，不会抢占你正在用的资源。
-
-### Q: 安全吗？别人能连上我的 GPU 吗？
-**A:** 局域网自动生成加密 token，只有同一 WiFi 下的设备才能连接。
-
-### Q: 需要什么手机？
-**A:** 任何 Android 8.0+ 手机都可以。有 GPU（Mali/Adreno）效果更好。
-
-### Q: 支持苹果设备吗？
-**A:** macOS 作为 Worker 已支持（需从源码编译）。iOS 暂不支持。
-
-### Q: 网络要求？
-**A:** 同一 WiFi 下延迟 ~5-20ms。建议 5G WiFi 获得最佳性能。
-
-### Q: 能跑多大的模型？
-**A:** 取决于所有设备的总内存。3 台 8GB 手机 = 24GB "虚拟 VRAM"，可以跑 13B 模型。
-
----
-
-## 🛠️ 技术栈
-
-| 层 | 技术 | 说明 |
-|-----|------|------|
-| 网络通信 | **gRPC** + Protocol Buffers | PC ↔ 手机高速通信 |
-| GPU 拦截 | **OpenCL ICD** (C) | 系统级 API 拦截 |
-| 服务发现 | **mDNS** (纯 Go 实现) | 局域网零配置发现 |
-| 计算引擎 | **Go** + **C** + **OpenCL** | 跨平台 GPU 计算 |
-| 调度器 | **加权拆分算法** | 按算力比例分配任务 |
-| 手机端 | **Go ARM64** + NDK | 原生性能 |
+| `--orchestrator` | — | 远程 VGPU Core 地址 |
 
 ---
 
 ## 📊 性能
 
-| 场景 | 延迟 | 吞吐量 |
-|------|------|--------|
-| 单次 kernel 调用 | ~100-120ms | - |
-| 大矩阵 (2048×8192) | ~0ms* | 122 GFLOPS |
+| 场景 | 延迟 | 吞吐 |
+|------|------|------|
+| 单次 kernel 调用 | ~5-20ms | — |
+| 大矩阵 (2048×8192) | ~0ms* | 122+ GFLOPS |
 | 连续推理 | ~5-20ms/step | 取决于模型 |
+| 3 设备集群 | ~3× 单设备 | 近线性扩展 |
 
-\* 异步执行，实际 GPU 计算时间取决于设备
+*\*异步执行，实际耗时取决于慢设备*
+
+### 对比
+
+| | DistriBox | 单 GPU | 纯 CPU |
+|--|-----------|--------|--------|
+| 硬件要求 | 任何设备 | 需要独立显卡 | 任何 CPU |
+| VRAM 池化 | ✅ 多设备叠加 | ❌ 单卡限制 | ❌ 系统内存 |
+| 应用兼容性 | 100% (OpenCL 2.0) | 100% | 需重写 |
+| 零配置 | ✅ mDNS | ✅ | ✅ |
+| 手机加速 | ✅ | ❌ | ❌ |
+
+---
+
+## 🏗️ 开发者：从源码构建
+
+| 工具 | 用途 | 安装 |
+|------|------|------|
+| **Go** 1.21+ | 主程序 | `winget install GoLang.Go` |
+| **Zig** 0.13+ | C 编译 | `winget install zig.zig` |
+| **CMake** 3.16+ | C 构建 | `winget install Kitware.CMake` |
+| **Ninja** | 快速构建 | `winget install Ninja-build.Ninja` |
+
+```bash
+git clone https://github.com/jerryzhang2906/distribox.git
+cd distribox
+make build          # 编译所有组件
+make dist-windows   # 打包 Windows 发布版
+```
+
+### 项目结构
+
+```
+distribox/
+├── cmd/
+│   ├── distribox/    🚀 统一启动器（一个 exe 替代全部）
+│   ├── worker/       🔧 Worker Agent（算力提供者）
+│   └── cli/          💻 命令行管理工具
+├── vgpu/             🧠 Virtual GPU Core
+│   ├── server/       gRPC + HTTP + IPC 服务
+│   ├── scheduler/    任务拆分与调度
+│   └── mem/          虚拟 VRAM + KV Cache
+├── icd/              🔌 OpenCL ICD 拦截层（纯 C）
+├── engine/           ⚡ 计算引擎（C + OpenCL）
+├── proto/            📡 gRPC 协议 (Protobuf)
+├── pkg/
+│   ├── discovery/    📡 mDNS 零配置发现
+│   ├── security/     🔒 加密 Token + mTLS
+│   └── installer/    📦 Windows 一键安装
+├── android/          📱 Android APK
+├── vk_layer/         🎮 Vulkan 隐式拦截层
+├── cuda_proxy/       🎯 CUDA 代理 DLL
+└── examples/         📖 推理示例 + E2E 测试
+```
+
+---
+
+## 📱 Android APK
+
+```bash
+# 安装
+adb install build/distribox-worker.apk
+
+# 构建（需要 Android NDK）
+$env:ANDROID_NDK_HOME = "你的NDK路径"
+.\scripts\build_android.ps1
+```
+
+**App 功能:**
+- ⚡ 一键连接 — 打开即用，mDNS 自动发现
+- 📊 实时显示 CPU/GPU/内存状态
+- 🎚️ 算力滑动条调节贡献比例
+- 🔔 后台运行 + 通知栏状态
+
+---
+
+## 🛠️ 技术栈
+
+| 层 | 技术 |
+|-----|------|
+| 网络 | gRPC + Protocol Buffers |
+| GPU 拦截 | OpenCL ICD (纯 C, 50+ API) |
+| 服务发现 | mDNS (纯 Go) |
+| 计算引擎 | Go + C + OpenCL |
+| 调度 | 加权拆分算法 |
+| 安全 | Cluster Token + mTLS |
+| 移动端 | Go ARM64 + NDK 交叉编译 |
+
+---
+
+## ❓ FAQ
+
+<details>
+<summary><b>Q: 安全吗？别人能连上我的 GPU 吗？</b></summary>
+<b>A:</b> 局域网自动生成 128-bit 加密 Cluster Token，只有同一 WiFi 下的设备才能连接。支持 mTLS 双向认证。
+</details>
+
+<details>
+<summary><b>Q: 需要什么手机？</b></summary>
+<b>A:</b> Android 8.0+ 即可。有 GPU（Mali/Adreno）效果更好，纯 CPU 也能贡献算力。
+</details>
+
+<details>
+<summary><b>Q: 能跑多大的模型？</b></summary>
+<b>A:</b> 取决于集群总内存。3 台 8GB 设备 = 24GB "虚拟 VRAM"，可跑 13B+ 模型。
+</details>
+
+<details>
+<summary><b>Q: 支持苹果设备吗？</b></summary>
+<b>A:</b> macOS Worker 已支持（源码编译）。iOS 暂不支持。
+</details>
+
+<details>
+<summary><b>Q: 延迟怎么样？</b></summary>
+<b>A:</b> 同一 WiFi 下 5-20ms。建议 5GHz WiFi 获得最佳性能。
+</details>
 
 ---
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 PR！
-
-### 开发环境设置
+欢迎 Issue 和 PR！
 
 ```bash
-git clone https://github.com/jerryzhang2906/distribox.git
-cd distribox
-go mod download
-make build
-```
-
-### 运行测试
-
-```bash
-go test ./...                    # 所有 Go 测试
-go test -v ./vgpu/server/        # IPC + gRPC 集成测试
-go test -v ./cmd/worker/engine/  # AI 内核正确性测试
+go test ./...                     # 所有 Go 测试
+go test -v ./vgpu/server/         # IPC + gRPC 集成测试
+go test -v ./cmd/worker/engine/   # AI 内核正确性测试
 ```
 
 ---
 
 ## 📄 许可证
 
-MIT License — 详见 [LICENSE](LICENSE) 文件。
+[MIT](LICENSE) © 2025-2026
 
 ---
 
-## 🙏 致谢
+## ⭐ Star History
 
-- [Khronos Group](https://www.khronos.org/opencl/) — OpenCL 标准
-- [Ollama](https://ollama.com/) — 本地 LLM 运行工具
-- [gRPC](https://grpc.io/) — 高性能 RPC 框架
-- [Zig](https://ziglang.org/) — 优秀 C 交叉编译工具链
+<p align="center">
+  <sub>如果这个项目对你有帮助，请给一个 ⭐ Star！</sub>
+</p>
 
 ---
 
 <p align="center">
-  <b>⭐ 如果这个项目对你有帮助，请给一个 Star！</b>
+  <sub>Built with ❤️ using Go, C, OpenCL, gRPC, and a lot of ☕</sub>
 </p>

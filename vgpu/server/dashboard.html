@@ -1,177 +1,457 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DistriBox — Virtual GPU Control Panel</title>
 <style>
+/* ══════════════════════════════════════════════════
+   DistriBox Dashboard v2 — Cyberpunk Glassmorphism
+   ══════════════════════════════════════════════════ */
 :root {
-  --bg: #0d1117; --surface: #161b22; --border: #30363d;
-  --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
-  --green: #3fb950; --orange: #d2991d; --red: #f85149; --purple: #a371f7;
+  --bg: #060b14;
+  --surface: rgba(16, 24, 48, 0.85);
+  --surface-hover: rgba(24, 36, 64, 0.9);
+  --border: rgba(0, 212, 255, 0.15);
+  --border-hover: rgba(0, 212, 255, 0.4);
+  --text: #e0e6f0;
+  --muted: #6070a0;
+  --accent: #00d4ff;
+  --accent2: #7c3aed;
+  --green: #00e676;
+  --orange: #ffb74d;
+  --red: #ff3d60;
+  --purple: #bb86fc;
+  --glow: 0 0 20px rgba(0, 212, 255, 0.15);
+  --glow-green: 0 0 20px rgba(0, 230, 118, 0.2);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
-header h1 { font-size: 20px; font-weight: 600; color: var(--accent); }
-header .status { display: flex; gap: 12px; margin-left: auto; font-size: 13px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-.dot.online { background: var(--green); } .dot.offline { background: var(--red); }
-main { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto; gap: 16px; padding: 16px 24px; max-width: 1400px; margin: 0 auto; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-.card h2 { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-.full { grid-column: 1 / -1; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
 
-/* GPU Specs */
-.gpu-specs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.spec-item { text-align: center; padding: 12px; background: var(--bg); border-radius: 6px; }
-.spec-value { font-size: 24px; font-weight: 700; color: var(--accent); }
-.spec-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+/* ── Particle Canvas ─────────────────────────────── */
+#particles {
+  position: fixed; top:0; left:0; width:100%; height:100%;
+  z-index: 0; pointer-events: none;
+}
 
-/* Worker list */
+/* ── Header ───────────────────────────────────────── */
+header {
+  position: sticky; top:0; z-index: 100;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 28px;
+  display: flex; align-items: center; gap: 16px;
+  flex-wrap: wrap;
+}
+header .logo { display: flex; align-items: center; gap: 10px; }
+header .logo-icon { font-size: 28px; filter: drop-shadow(0 0 8px rgba(0,212,255,0.5)); }
+header h1 {
+  font-size: 22px; font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+header .badge {
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+  background: rgba(0, 212, 255, 0.1); border: 1px solid var(--border);
+  color: var(--accent); font-weight: 600; letter-spacing: 0.5px;
+}
+header .stats { display: flex; gap: 20px; margin-left: auto; }
+.stat-pill {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--muted);
+}
+.stat-pill .dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot.dead { background: var(--red); }
+.dot.warn { background: var(--orange); }
+
+/* ── Main Grid ────────────────────────────────────── */
+main {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  padding: 20px 28px;
+  max-width: 1440px; margin: 0 auto;
+}
+@media (max-width: 1024px) { main { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { main { grid-template-columns: 1fr; padding: 12px; } }
+
+/* ── Cards ────────────────────────────────────────── */
+.card {
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: all 0.3s ease;
+  position: relative; overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0; transition: opacity 0.3s;
+}
+.card:hover::before { opacity: 1; }
+.card:hover { border-color: var(--border-hover); box-shadow: var(--glow); }
+.card h3 {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.card h3 .icon { font-size: 16px; }
+.col-2 { grid-column: span 2; }
+.col-4 { grid-column: span 4; }
+@media (max-width: 1024px) { .col-2, .col-4 { grid-column: span 2; } }
+@media (max-width: 600px) { .col-2, .col-4 { grid-column: span 1; } }
+
+/* ── GPU Specs ────────────────────────────────────── */
+.specs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 600px) { .specs-grid { grid-template-columns: repeat(2, 1fr); } }
+.spec-item {
+  text-align: center; padding: 16px 12px;
+  background: rgba(0,0,0,0.25); border-radius: var(--radius-sm);
+  border: 1px solid transparent; transition: all 0.3s;
+}
+.spec-item:hover { border-color: var(--border); background: rgba(0,0,0,0.4); }
+.spec-value {
+  font-size: 26px; font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.spec-label { font-size: 11px; color: var(--muted); margin-top: 6px; letter-spacing: 0.5px; }
+.spec-sub { font-size: 10px; color: var(--muted); opacity: 0.6; }
+
+/* ── Worker List ──────────────────────────────────── */
 .worker-list { display: flex; flex-direction: column; gap: 8px; }
-.worker { display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--bg); border-radius: 6px; }
-.worker-icon { font-size: 24px; }
-.worker-info { flex: 1; }
-.worker-name { font-weight: 600; font-size: 14px; }
-.worker-meta { font-size: 12px; color: var(--muted); }
-.worker-score { font-size: 14px; font-weight: 600; color: var(--accent); }
-.worker-status { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-.worker-status.idle { background: #1b3a1b; color: var(--green); }
-.worker-status.busy { background: #3a2f1b; color: var(--orange); }
-.worker-status.offline { background: #3a1b1b; color: var(--red); }
-
-/* Task log */
-.task-log { max-height: 300px; overflow-y: auto; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
-.log-entry { padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
-.log-time { color: var(--muted); min-width: 70px; }
-.log-type { min-width: 60px; font-weight: 600; }
-.log-type.dispatch { color: var(--accent); }
-.log-type.complete { color: var(--green); }
-.log-type.error { color: var(--red); }
-.log-msg { flex: 1; }
-
-/* Buttons */
-.btn { padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; cursor: pointer; background: var(--surface); color: var(--text); transition: all 0.15s; }
-.btn:hover { border-color: var(--accent); }
-.btn.primary { background: #1f6feb; border-color: #1f6feb; color: white; }
-.btn.primary:hover { background: #388bfd; }
-.btn.danger { background: #da3633; border-color: #da3633; color: white; }
-.btn-row { display: flex; gap: 8px; margin-top: 12px; }
-
-/* ICD Status */
-.icd-status { display: flex; gap: 16px; align-items: center; }
-.icd-indicator { width: 12px; height: 12px; border-radius: 50%; }
-.icd-indicator.installed { background: var(--green); }
-.icd-indicator.missing { background: var(--red); }
-
-/* Chart area */
-.chart-bar { display: flex; align-items: flex-end; gap: 4px; height: 100px; padding: 8px; }
-.chart-column { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; transition: height 0.3s; min-width: 4px; opacity: 0.7; }
-.chart-column.current { opacity: 1; background: var(--green); }
-
-/* Responsive */
-@media (max-width: 768px) {
-  main { grid-template-columns: 1fr; }
-  .gpu-specs { grid-template-columns: repeat(2, 1fr); }
+.worker {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.2); border: 1px solid transparent;
+  transition: all 0.2s;
 }
+.worker:hover { border-color: var(--border); background: rgba(0,0,0,0.35); }
+.worker-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.worker-avatar.gpu { background: rgba(124,58,237,0.2); color: var(--purple); }
+.worker-avatar.cpu { background: rgba(0,212,255,0.15); color: var(--accent); }
+.worker-info { flex:1; min-width: 0; }
+.worker-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.worker-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.worker-bars { display: flex; gap: 6px; margin-top: 4px; }
+.worker-bar {
+  height: 3px; border-radius: 2px; transition: width 0.5s;
+}
+.worker-bar.cpu-bar { background: var(--accent); }
+.worker-bar.gpu-bar { background: var(--purple); }
+.worker-bar.ram-bar { background: var(--green); }
+.worker-score {
+  font-size: 13px; font-weight: 700; color: var(--accent);
+  white-space: nowrap;
+}
+.worker-status {
+  padding: 3px 10px; border-radius: 12px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  text-transform: uppercase; white-space: nowrap;
+}
+.status-online { background: rgba(0,230,118,0.15); color: var(--green); }
+.status-busy { background: rgba(255,183,77,0.15); color: var(--orange); }
+.status-offline { background: rgba(255,61,96,0.15); color: var(--red); }
+.status-idle { background: rgba(0,212,255,0.1); color: var(--accent); }
+
+/* ── Charts ───────────────────────────────────────── */
+.chart-container { position: relative; height: 140px; }
+.chart-canvas { width: 100%; height: 100%; }
+
+/* ── Task Feed ────────────────────────────────────── */
+.task-feed {
+  max-height: 280px; overflow-y: auto;
+  font-family: var(--mono); font-size: 12px;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.task-feed::-webkit-scrollbar { width: 4px; }
+.task-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.task-entry {
+  display: flex; gap: 10px; padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  align-items: baseline;
+}
+.task-time { color: var(--muted); min-width: 60px; flex-shrink: 0; }
+.task-icon { min-width: 16px; text-align: center; flex-shrink: 0; }
+.task-icon.ok { color: var(--green); }
+.task-icon.err { color: var(--red); }
+.task-icon.dispatch { color: var(--accent); }
+.task-msg { color: var(--text); word-break: break-all; }
+.task-worker { color: var(--purple); }
+
+.empty-state {
+  text-align: center; padding: 30px; color: var(--muted);
+}
+
+/* ── Buttons ──────────────────────────────────────── */
+.btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.btn {
+  padding: 8px 18px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border); letter-spacing: 0.3px;
+  background: rgba(0,0,0,0.3); color: var(--text);
+  transition: all 0.2s; backdrop-filter: blur(8px);
+}
+.btn:hover { border-color: var(--accent); box-shadow: 0 0 12px rgba(0,212,255,0.15); }
+.btn.primary { background: linear-gradient(135deg, #0066cc, #0044aa); border-color: #0066cc; color: white; }
+.btn.primary:hover { background: linear-gradient(135deg, #0077dd, #0055bb); box-shadow: 0 0 16px rgba(0,100,255,0.3); }
+.btn.danger { background: rgba(255,61,96,0.2); border-color: rgba(255,61,96,0.3); color: var(--red); }
+.btn.danger:hover { background: rgba(255,61,96,0.3); box-shadow: 0 0 12px rgba(255,61,96,0.2); }
+.btn.success { background: rgba(0,230,118,0.15); border-color: rgba(0,230,118,0.3); color: var(--green); }
+.btn.success:hover { box-shadow: 0 0 12px rgba(0,230,118,0.2); }
+
+/* ── ICD Status Bar ───────────────────────────────── */
+.icd-bar {
+  display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  border-radius: var(--radius-sm); background: rgba(0,0,0,0.2);
+  margin-top: 8px;
+}
+.icd-ring {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.icd-ring.ok { background: rgba(0,230,118,0.15); border: 2px solid var(--green); }
+.icd-ring.no { background: rgba(255,61,96,0.1); border: 2px solid var(--red); }
+.icd-info { flex: 1; }
+.icd-info .title { font-weight: 600; font-size: 13px; }
+.icd-info .details { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ── Pulse Animation ──────────────────────────────── */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.pulse { animation: pulse 2s infinite; }
+
+/* ── Toast ────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  padding: 12px 20px; border-radius: 12px; z-index: 999;
+  background: var(--surface); border: 1px solid var(--border);
+  backdrop-filter: blur(12px); font-size: 13px;
+  animation: slideIn 0.3s ease;
+  max-width: 360px;
+}
+.toast.ok { border-color: var(--green); }
+.toast.err { border-color: var(--red); }
+@keyframes slideIn { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
 </style>
 </head>
 <body>
+
+<!-- Particle Background -->
+<canvas id="particles"></canvas>
+
+<!-- Header -->
 <header>
-  <h1>⚡ DistriBox</h1>
-  <span style="font-size:13px;color:var(--muted)">Virtual GPU Control Panel</span>
-  <div class="status">
-    <span id="ws-status"><span class="dot offline"></span>Disconnected</span>
-    <span id="worker-count"><span class="dot offline"></span>0 Workers</span>
+  <div class="logo">
+    <span class="logo-icon">⚡</span>
+    <h1>DistriBox</h1>
+  </div>
+  <span class="badge">v0.2.0</span>
+  <div class="stats">
+    <span class="stat-pill"><span class="dot live" id="ws-dot"></span><span id="ws-text">Live</span></span>
+    <span class="stat-pill">👥 <span id="hdr-workers">0</span> Workers</span>
+    <span class="stat-pill">📋 <span id="hdr-tasks">0</span> Tasks</span>
   </div>
 </header>
+
 <main>
-  <!-- GPU Specs -->
-  <div class="card full">
-    <h2>🖥️ Virtual GPU — Specifications</h2>
-    <div class="gpu-specs" id="gpu-specs">
-      <div class="spec-item"><div class="spec-value" id="spec-name">---</div><div class="spec-label">Model Name</div></div>
-      <div class="spec-item"><div class="spec-value" id="spec-vram">---</div><div class="spec-label">VRAM (MB)</div></div>
-      <div class="spec-item"><div class="spec-value" id="spec-cu">---</div><div class="spec-label">Compute Units</div></div>
-      <div class="spec-item"><div class="spec-value" id="spec-clock">---</div><div class="spec-label">Clock (MHz)</div></div>
+  <!-- GPU Specs Card -->
+  <div class="card col-4">
+    <h3><span class="icon">🖥️</span> Virtual GPU Specifications</h3>
+    <div class="specs-grid">
+      <div class="spec-item">
+        <div class="spec-value" id="spec-name">—</div>
+        <div class="spec-label">Model</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-value" id="spec-vram">0</div>
+        <div class="spec-label">VRAM</div>
+        <div class="spec-sub">MB</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-value" id="spec-cu">0</div>
+        <div class="spec-label">Compute Units</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-value" id="spec-clock">0</div>
+        <div class="spec-label">Clock</div>
+        <div class="spec-sub">MHz</div>
+      </div>
     </div>
     <div class="btn-row">
-      <button class="btn" onclick="refreshSpecs()">🔄 Refresh</button>
       <button class="btn primary" onclick="installICD()">📦 Install OpenCL Proxy</button>
-      <button class="btn" onclick="checkICDStatus()">🔍 Check Status</button>
-      <button class="btn danger" onclick="uninstallICD()">🗑️ Remove Proxy</button>
+      <button class="btn success" onclick="checkICDStatus()">🔍 Check Status</button>
+      <button class="btn danger" onclick="uninstallICD()">🗑 Remove Proxy</button>
     </div>
-    <div class="btn-row" style="margin-top:8px">
-      <button class="btn primary" onclick="installDisplay()">🖥️ Install Display Adapter (Task Manager)</button>
-      <button class="btn danger" onclick="uninstallDisplay()">🗑️ Remove Display Adapter</button>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn primary" onclick="installDisplay()">🖥 Install Display Adapter</button>
+      <button class="btn danger" onclick="uninstallDisplay()">🗑 Remove Adapter</button>
     </div>
   </div>
 
-  <!-- Workers -->
-  <div class="card">
-    <h2>🖧 Workers — <span id="wcount">0</span> Connected</h2>
+  <!-- Worker List -->
+  <div class="card col-2">
+    <h3><span class="icon">🖧</span> Workers</h3>
     <div class="worker-list" id="worker-list">
-      <div style="color:var(--muted);text-align:center;padding:20px">No workers connected</div>
+      <div class="empty-state">No workers connected</div>
     </div>
   </div>
 
-  <!-- Cluster Info -->
-  <div class="card">
-    <h2>📊 Cluster Stats</h2>
-    <div class="gpu-specs" style="grid-template-columns:1fr 1fr;">
-      <div class="spec-item"><div class="spec-value" id="stat-total-ram">0</div><div class="spec-label">Total RAM (MB)</div></div>
-      <div class="spec-item"><div class="spec-value" id="stat-total-vram">0</div><div class="spec-label">Total VRAM (MB)</div></div>
-      <div class="spec-item"><div class="spec-value" id="stat-total-cores">0</div><div class="spec-label">Total CPU Cores</div></div>
-      <div class="spec-item"><div class="spec-value" id="stat-gpu-count">0</div><div class="spec-label">GPU Workers</div></div>
+  <!-- Cluster Stats -->
+  <div class="card col-2">
+    <h3><span class="icon">📊</span> Cluster Stats</h3>
+    <div class="specs-grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="spec-item"><div class="spec-value" id="stat-ram">0</div><div class="spec-label">Total RAM (MB)</div></div>
+      <div class="spec-item"><div class="spec-value" id="stat-vram">0</div><div class="spec-label">Total VRAM (MB)</div></div>
+      <div class="spec-item"><div class="spec-value" id="stat-cores">0</div><div class="spec-label">CPU Cores</div></div>
+      <div class="spec-item"><div class="spec-value" id="stat-gpus">0</div><div class="spec-label">GPU Workers</div></div>
+    </div>
+    <!-- Chart -->
+    <div class="chart-container" style="margin-top:14px">
+      <canvas class="chart-canvas" id="chart-throughput"></canvas>
     </div>
   </div>
 
-  <!-- Task Monitor -->
-  <div class="card full">
-    <h2>📋 Task Monitor — <span id="task-count">0</span> tasks</h2>
-    <div class="task-log" id="task-log">
-      <div style="color:var(--muted);text-align:center;padding:20px">Waiting for tasks...</div>
+  <!-- Task Feed -->
+  <div class="card col-4">
+    <h3><span class="icon">📋</span> Task Monitor — <span id="task-count">0</span> tasks</h3>
+    <div class="task-feed" id="task-feed">
+      <div class="empty-state">Waiting for tasks...</div>
     </div>
   </div>
 
-  <!-- ICD / OpenCL Status -->
-  <div class="card full">
-    <h2>🔌 OpenCL ICD / System Proxy Status</h2>
-    <div id="icd-info" style="font-size:13px; line-height:1.8">
-      <div class="icd-status">
-        <div class="icd-indicator missing" id="icd-dot"></div>
-        <span id="icd-text">Checking status...</span>
+  <!-- ICD Status -->
+  <div class="card col-4">
+    <h3><span class="icon">🔌</span> OpenCL ICD / System Proxy</h3>
+    <div id="icd-bar-container">
+      <div class="icd-bar">
+        <div class="icd-ring no" id="icd-ring">!</div>
+        <div class="icd-info">
+          <div class="title" id="icd-title">Checking status...</div>
+          <div class="details" id="icd-details"></div>
+        </div>
       </div>
-      <div id="icd-details" style="margin-top:8px;color:var(--muted)"></div>
     </div>
   </div>
 </main>
 
 <script>
-const SSE_URL = `/sse`;
+/* ══════════════════════════════════════════════════
+   DistriBox Dashboard JS
+   ══════════════════════════════════════════════════ */
+
+// ── Particles ─────────────────────────────────────
+(function() {
+  const canvas = document.getElementById('particles');
+  const ctx = canvas.getContext('2d');
+  let particles = [], w, h;
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  for (let i = 0; i < 50; i++) {
+    particles.push({
+      x: Math.random() * w, y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
+      size: Math.random() * 2 + 0.5,
+      alpha: Math.random() * 0.4 + 0.1
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+      if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0, 212, 255, ${p.alpha})`;
+      ctx.fill();
+
+      // Draw connections between nearby particles
+      particles.forEach(q => {
+        const dx = p.x - q.x, dy = p.y - q.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 150) {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(q.x, q.y);
+          ctx.strokeStyle = `rgba(0, 212, 255, ${0.04 * (1 - dist/150)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      });
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ── SSE ────────────────────────────────────────────
+const SSE_URL = '/sse';
 let evtSource, taskCount = 0;
+const throughputHistory = Array(30).fill(0);
 
 function connectSSE() {
   evtSource = new EventSource(SSE_URL);
   evtSource.onopen = () => {
-    document.getElementById('ws-status').innerHTML = '<span class="dot online"></span>Live';
+    setWS(true);
     refreshAll();
   };
   evtSource.onerror = () => {
-    document.getElementById('ws-status').innerHTML = '<span class="dot offline"></span>Reconnecting...';
+    setWS(false);
     evtSource.close();
-    setTimeout(connectSSE, 2000);
+    setTimeout(connectSSE, 3000);
   };
   evtSource.onmessage = (e) => {
     if (!e.data) return;
-    const data = JSON.parse(e.data);
-    if (data.workers !== undefined) updateWorkers(data.workers, data.cluster);
-    if (data.task) addTaskLog(data.task);
-    if (data.gpu) updateGPUSpecs(data.gpu);
+    try {
+      const data = JSON.parse(e.data);
+      if (data.workers !== undefined) updateWorkers(data.workers, data.cluster);
+      if (data.task) addTaskLog(data.task);
+      if (data.gpu) updateGPUSpecs(data.gpu);
+    } catch(ex) {}
   };
 }
 
+function setWS(live) {
+  const dot = document.getElementById('ws-dot');
+  const txt = document.getElementById('ws-text');
+  dot.className = live ? 'dot live' : 'dot dead pulse';
+  txt.textContent = live ? 'Live' : 'Reconnecting';
+}
+
+// ── Data Fetching ──────────────────────────────────
 async function refreshAll() {
   try {
     const [status, workers, device] = await Promise.all([
@@ -183,75 +463,163 @@ async function refreshAll() {
     updateWorkers(status.workers, null);
     updateDevice(device);
     checkICDStatus();
-  } catch(e) { console.error(e); }
+  } catch(e) { console.error('refresh:', e); }
 }
-
-function refreshSpecs() { refreshAll(); }
 
 function updateGPUSpecs(gpu) {
   if (!gpu) return;
-  document.getElementById('spec-name').textContent = gpu.name ? gpu.name.substring(0, 20) : '---';
-  document.getElementById('spec-vram').textContent = gpu.vram_total_mb || gpu.vramTotalMb || '---';
-  document.getElementById('spec-cu').textContent = gpu.compute_units || gpu.ComputeUnits || '---';
-  document.getElementById('spec-clock').textContent = gpu.clock_mhz || gpu.MaxClockMHz || '---';
+  setEl('spec-name', (gpu.name || '—').substring(0, 20));
+  setEl('spec-vram', gpu.vram_total_mb || gpu.vramTotalMb || 0);
+  setEl('spec-cu', gpu.compute_units || gpu.ComputeUnits || 0);
+  setEl('spec-clock', gpu.clock_mhz || gpu.MaxClockMHz || 0);
 }
 
 function updateDevice(dev) {
-  if (dev) updateGPUSpecs({name: dev.Name, vram_total_mb: dev.VRAMTotal/(1024*1024), compute_units: dev.ComputeUnits, clock_mhz: dev.MaxClockMHz});
+  if (!dev) return;
+  updateGPUSpecs({
+    name: dev.Name || dev.name,
+    vram_total_mb: dev.VRAMTotal ? Math.round(dev.VRAMTotal/(1024*1024)) : 0,
+    compute_units: dev.ComputeUnits || dev.compute_units,
+    clock_mhz: dev.MaxClockMHz || dev.max_clock_mhz
+  });
 }
 
 function updateWorkers(workers, cluster) {
   const el = document.getElementById('worker-list');
-  const cnt = document.getElementById('wcount');
-  const wc = document.getElementById('worker-count');
+  document.getElementById('hdr-workers').textContent = workers ? workers.length : 0;
+
   if (!workers || workers.length === 0) {
-    el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">No workers connected</div>';
-    cnt.textContent = '0'; wc.innerHTML = '<span class="dot offline"></span>0 Workers';
+    el.innerHTML = '<div class="empty-state">No workers connected</div>';
     return;
   }
-  cnt.textContent = workers.length;
-  wc.innerHTML = `<span class="dot online"></span>${workers.length} Workers`;
-  el.innerHTML = workers.map(w => `
-    <div class="worker">
-      <div class="worker-icon">${w.HasGPU ? '🎮' : '💻'}</div>
-      <div class="worker-info">
-        <div class="worker-name">${w.Name || w.name || w.id}</div>
-        <div class="worker-meta">${w.id || w.ID} | ${w.HasGPU ? 'GPU: '+(w.GPUVramMB||'?')+'MB' : 'CPU only'} | RAM: ${w.AvailableRAMMB||w.AvailableRAM||'?'}MB</div>
-      </div>
-      <div class="worker-score">${(w.CapabilityScore||w.capability_score||w.score||0).toFixed(1)}x</div>
-      <div class="worker-status ${(w.Status||w.status||'idle').toLowerCase()}">${w.Status||w.status||'idle'}</div>
-    </div>
-  `).join('');
 
-  if (cluster) {
-    document.getElementById('stat-total-ram').textContent = cluster.totalRamMB || 0;
-    document.getElementById('stat-total-vram').textContent = cluster.totalVramMB || 0;
-    document.getElementById('stat-total-cores').textContent = cluster.totalCores || 0;
-    document.getElementById('stat-gpu-count').textContent = cluster.gpuCount || 0;
-  }
+  let totalRAM = 0, totalVRAM = 0, totalCores = 0, gpuCount = 0;
+  el.innerHTML = workers.map(w => {
+    const isGPU = w.HasGPU || w.has_gpu;
+    const vram = w.GPUVramMB || w.gpu_vram_mb || 0;
+    const ram = w.AvailableRAMMB || w.available_ram_mb || w.TotalRAMMB || 0;
+    const cpu = w.CPUPct || w.cpu_pct || 0;
+    const gpuPct = w.GPUPct || w.gpu_pct || 0;
+    const score = (w.CapabilityScore || w.capability_score || w.score || 1).toFixed(1);
+    const status = (w.Status || w.status || 'idle').toLowerCase();
+
+    totalRAM += ram;
+    totalVRAM += vram;
+    totalCores += (w.CPUCores || w.cpu_cores || w.CPULogical || 1);
+    if (isGPU || vram > 0) gpuCount++;
+
+    return `<div class="worker">
+      <div class="worker-avatar ${isGPU ? 'gpu' : 'cpu'}">${isGPU ? '🎮' : '💻'}</div>
+      <div class="worker-info">
+        <div class="worker-name">${esc(w.Name || w.name || w.id)}</div>
+        <div class="worker-meta">${isGPU ? 'GPU '+vram+'MB' : 'CPU'} · RAM ${ram}MB</div>
+        <div class="worker-bars">
+          <div class="worker-bar cpu-bar" style="width:${Math.min(cpu, 100)}%"></div>
+          <div class="worker-bar gpu-bar" style="width:${Math.min(gpuPct, 100)}%"></div>
+        </div>
+      </div>
+      <div class="worker-score">${score}x</div>
+      <div class="worker-status status-${status}">${status}</div>
+    </div>`;
+  }).join('');
+
+  // Cluster stats
+  setEl('stat-ram', totalRAM);
+  setEl('stat-vram', totalVRAM);
+  setEl('stat-cores', totalCores);
+  setEl('stat-gpus', gpuCount);
+
+  // Update throughput chart
+  throughputHistory.push(gpuCount > 0 ? 1 : 0);
+  if (throughputHistory.length > 30) throughputHistory.shift();
+  drawChart();
 }
 
+// ── Task Feed ──────────────────────────────────────
 function addTaskLog(task) {
   taskCount++;
-  document.getElementById('task-count').textContent = taskCount;
-  const log = document.getElementById('task-log');
-  if (log.querySelector('div[style]')) log.innerHTML = '';
-  const entry = document.createElement('div');
-  entry.className = 'log-entry';
+  setEl('task-count', taskCount);
+  setEl('hdr-tasks', taskCount);
+  const feed = document.getElementById('task-feed');
+  if (feed.querySelector('.empty-state')) feed.innerHTML = '';
+
   const now = new Date().toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = 'task-entry';
+  const icon = task.error ? '✗' : '✓';
+  const iconClass = task.error ? 'err' : 'ok';
   entry.innerHTML = `
-    <span class="log-time">${now}</span>
-    <span class="log-type ${task.error ? 'error' : 'complete'}">${task.error ? 'ERROR' : 'COMPLETE'}</span>
-    <span class="log-msg">${task.kernel || 'task'} → ${task.worker || 'local'} (${task.duration || '?'}ms) ${task.error || ''}</span>
+    <span class="task-time">${now}</span>
+    <span class="task-icon ${iconClass}">${icon}</span>
+    <span class="task-msg">${esc(task.kernel||'task')} <span class="task-worker">→ ${esc(task.worker||'local')}</span> <span style="color:var(--muted)">${task.duration||'?'}ms</span></span>
   `;
-  log.insertBefore(entry, log.firstChild);
-  if (log.children.length > 50) log.lastChild.remove();
+  feed.insertBefore(entry, feed.firstChild);
+  while (feed.children.length > 60) feed.lastChild.remove();
 }
 
+// ── Chart ──────────────────────────────────────────
+function drawChart() {
+  const canvas = document.getElementById('chart-throughput');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,212,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = (H / 4) * i;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Data line
+  if (throughputHistory.length < 2) return;
+  const maxVal = Math.max(1, ...throughputHistory);
+  const stepX = W / (throughputHistory.length - 1);
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, H);
+  gradient.addColorStop(0, 'rgba(0,212,255,0.3)');
+  gradient.addColorStop(1, 'rgba(0,212,255,0)');
+
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  throughputHistory.forEach((v, i) => {
+    const x = i * stepX;
+    const y = H - (v / maxVal) * (H - 4);
+    ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Line stroke
+  ctx.beginPath();
+  ctx.strokeStyle = '#00d4ff';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#00d4ff';
+  ctx.shadowBlur = 8;
+  throughputHistory.forEach((v, i) => {
+    const x = i * stepX;
+    const y = H - (v / maxVal) * (H - 4);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+window.addEventListener('resize', () => setTimeout(drawChart, 100));
+
+// ── ICD Actions ────────────────────────────────────
 async function installICD() {
   const res = await fetch('/api/v1/icd/install', {method:'POST'});
   const data = await res.json();
-  alert(data.status === 'ok' ? 'ICD/Proxy installed successfully!' : 'Error: ' + (data.error||'unknown'));
+  toast(data.status === 'ok' ? '✓ OpenCL Proxy installed!' : '✗ ' + (data.output||'Error'), data.status === 'ok');
   checkICDStatus();
 }
 
@@ -259,7 +627,7 @@ async function uninstallICD() {
   if (!confirm('Restore original OpenCL.dll?')) return;
   const res = await fetch('/api/v1/icd/uninstall', {method:'POST'});
   const data = await res.json();
-  alert(data.status === 'ok' ? 'ICD uninstalled, original OpenCL.dll restored.' : 'Error: ' + data.error);
+  toast(data.status === 'ok' ? '✓ ICD uninstalled' : '✗ Error', data.status === 'ok');
   checkICDStatus();
 }
 
@@ -267,34 +635,62 @@ async function checkICDStatus() {
   try {
     const res = await fetch('/api/v1/icd/status');
     const data = await res.json();
-    document.getElementById('icd-dot').className = 'icd-indicator ' + (data.proxy_installed ? 'installed' : 'missing');
-    document.getElementById('icd-text').textContent = data.proxy_installed
-      ? 'OpenCL Proxy: INSTALLED — Virtual GPU is SYSTEM-WIDE visible'
+    const ok = data.proxy_installed || data.icd_registered;
+    const ring = document.getElementById('icd-ring');
+    ring.className = 'icd-ring ' + (ok ? 'ok' : 'no');
+    ring.textContent = ok ? '✓' : '!';
+    document.getElementById('icd-title').textContent = ok
+      ? 'OpenCL Proxy: INSTALLED — Virtual GPU is system-wide visible'
       : 'OpenCL Proxy: Not installed';
     document.getElementById('icd-details').innerHTML = `
       System OpenCL Proxy: ${data.proxy_installed ? '✅ Active' : '❌ Not installed'}<br>
       ICD Registered: ${data.icd_registered ? '✅ ' + data.icd_path : '❌ Not registered'}<br>
-      Backup OpenCL_orig.dll: ${data.backup_exists ? '✅ Present' : '❌ Missing'}<br>
-      Virtual GPU Visibility: ${data.platforms_found ? '✅ ' + data.platforms_found + ' platform(s) visible' : '❌ Not visible'}
+      Backup OpenCL_orig.dll: ${data.backup_exists ? '✅ Present' : '❌ Missing'}
     `;
-  } catch(e) { document.getElementById('icd-text').textContent = 'Cannot check status'; }
+  } catch(e) {
+    document.getElementById('icd-title').textContent = 'Cannot reach server';
+  }
 }
-
-connectSSE();
-refreshAll();
-setInterval(refreshAll, 10000);
 
 async function installDisplay() {
   const res = await fetch('/api/v1/display/install', {method:'POST'});
   const data = await res.json();
-  alert(data.output || data.status);
+  toast(data.output || data.status, true);
 }
+
 async function uninstallDisplay() {
   if (!confirm('Remove DistriBox display adapter?')) return;
   const res = await fetch('/api/v1/display/uninstall', {method:'POST'});
   const data = await res.json();
-  alert(data.output || data.status);
+  toast(data.output || data.status, true);
 }
+
+// ── Toast ──────────────────────────────────────────
+function toast(msg, ok) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (ok ? 'ok' : 'err');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; }, 3000);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ── Helpers ────────────────────────────────────────
+function setEl(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = typeof val === 'number' ? Math.round(val).toLocaleString() : val;
+}
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── Init ───────────────────────────────────────────
+connectSSE();
+refreshAll();
+setInterval(refreshAll, 10000);
 </script>
 </body>
 </html>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark cyberpunk-inspired palette -->
+    <color name="bg_primary">#FF0A0E1A</color>
+    <color name="bg_card">#FF141B2D</color>
+    <color name="bg_input">#FF1C2541</color>
+    <color name="accent">#FF00D4FF</color>
+    <color name="accent_green">#FF00E676</color>
+    <color name="accent_red">#FFFF3D60</color>
+    <color name="accent_purple">#FFBB86FC</color>
+    <color name="accent_orange">#FFFFB74D</color>
+    <color name="text_primary">#FFE8EAED</color>
+    <color name="text_secondary">#FF8892B0</color>
+    <color name="text_muted">#FF495670</color>
+    <color name="divider">#FF1E2A45</color>
+    <color name="status_online">#FF00E676</color>
+    <color name="status_offline">#FFFF3D60</color>
+</resources>

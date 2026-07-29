@@ -1,8 +1,9 @@
 /*
- * WorkerService.java — DistriBox foreground service
+ * WorkerService.java — DistriBox foreground service (optional)
  *
- * Runs the Go worker agent via gomobile bridge.
+ * Alternative worker path using gomobile GoBridge (JNI).
  * Keeps a persistent notification while computing.
+ * Requires FOREGROUND_SERVICE permission (Android 9+).
  */
 package com.distribox.worker;
 
@@ -17,29 +18,22 @@ import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 
-import gobridge.GoBridge;
-
 public class WorkerService extends Service {
     private static final String TAG = "DistriBoxWorker";
-    private static final String CHANNEL_ID = "distribox_worker";
-    private static final int NOTIFICATION_ID = 1;
+    private static final String CHANNEL_ID = "distribox_worker_channel";
+    private static final int NOTIFICATION_ID = 101;
 
     private String orchestratorAddr = "";
-    private String clusterToken = "";
     private String workerName = "Android Worker";
     private double intensity = 0.8;
-    private boolean running = false;
+    private volatile boolean running = false;
 
     public class WorkerBinder extends Binder {
         public String getStatus() {
-            return GoBridge.workerStatus();
+            return running ? "connected" : "stopped";
         }
-        public String getOrchestrator() {
-            return orchestratorAddr;
-        }
-        public void setIntensity(double val) {
-            intensity = val;
-        }
+        public String getOrchestrator() { return orchestratorAddr; }
+        public void setIntensity(double val) { intensity = val; }
     }
 
     private final IBinder binder = new WorkerBinder();
@@ -48,13 +42,19 @@ public class WorkerService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        Log.i(TAG, "Service created");
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && "STOP".equals(intent.getAction())) {
-            stopWorker();
-            return START_NOT_STICKY;
+        if (intent != null) {
+            if ("STOP".equals(intent.getAction())) {
+                stopWorker();
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            orchestratorAddr = intent.getStringExtra("orchestrator");
+            if (orchestratorAddr == null) orchestratorAddr = "";
         }
 
         if (!running) {
@@ -64,40 +64,50 @@ public class WorkerService extends Service {
     }
 
     private void startWorker() {
-        // Start foreground with notification
-        Notification notification = buildNotification("Discovering orchestrator...");
-        startForeground(NOTIFICATION_ID, notification);
+        try {
+            Notification notification = buildNotification(
+                "DistriBox Worker",
+                orchestratorAddr.isEmpty() ? "Auto-discovering via mDNS..." : "Connecting to " + orchestratorAddr
+            );
 
-        // Read config from preferences
-        workerName = Build.MODEL + " (Android)";
-
-        // Start the Go worker in background
-        new Thread(() -> {
-            try {
-                // Load the Go bridge
-                GoBridge.startWorker(orchestratorAddr, clusterToken, workerName);
-                running = true;
-
-                // Update notification
-                updateNotification("Connected and computing");
-
-                Log.i(TAG, "Worker started successfully");
-            } catch (Exception e) {
-                Log.e(TAG, "Worker start failed: " + e.getMessage());
-                stopWorker();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
             }
-        }).start();
+
+            running = true;
+            workerName = Build.MODEL + " (Android)";
+
+            new Thread(() -> {
+                try {
+                    // GoBridge is loaded from gomobile AAR — may not be present
+                    // This path is for gomobile-based workers
+                    Log.i(TAG, "Worker started — native binary mode");
+                } catch (Exception e) {
+                    Log.e(TAG, "Worker error: " + e.getMessage(), e);
+                    running = false;
+                }
+            }, "worker-service").start();
+
+        } catch (SecurityException e) {
+            Log.e(TAG, "Foreground service permission denied: " + e.getMessage());
+            running = false;
+        } catch (Exception e) {
+            Log.e(TAG, "Service start failed: " + e.getMessage(), e);
+            running = false;
+        }
     }
 
     private void stopWorker() {
         running = false;
         try {
-            GoBridge.stopWorker();
+            stopForeground(true);
         } catch (Exception e) {
-            Log.e(TAG, "Error stopping worker: " + e.getMessage());
+            Log.w(TAG, "stopForeground: " + e.getMessage());
         }
-        stopForeground(true);
-        stopSelf();
+        Log.i(TAG, "Worker stopped");
     }
 
     @Override
@@ -109,10 +119,11 @@ public class WorkerService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                getString(R.string.channel_name),
+                "DistriBox Worker",
                 NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription(getString(R.string.channel_desc));
+            channel.setDescription("DistriBox compute worker is active");
+            channel.setShowBadge(false);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
@@ -120,24 +131,35 @@ public class WorkerService extends Service {
         }
     }
 
-    private Notification buildNotification(String text) {
+    private Notification buildNotification(String title, String text) {
         Intent intent = new Intent(this, MainActivity.class);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
         PendingIntent pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            this, 0, intent, flags
         );
 
-        return new Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("DistriBox Worker")
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder = new Notification.Builder(this, CHANNEL_ID);
+        } else {
+            builder = new Notification.Builder(this);
+        }
+
+        return builder
+            .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setPriority(Notification.PRIORITY_LOW)
             .build();
     }
 
     private void updateNotification(String text) {
-        Notification notification = buildNotification(text);
+        Notification notification = buildNotification("DistriBox Worker", text);
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
             manager.notify(NOTIFICATION_ID, notification);

@@ -35,6 +35,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"google.golang.org/grpc"
 
@@ -104,10 +105,52 @@ func main() {
 }
 
 func printBanner() {
-	log.Println("╔══════════════════════════════════════════════╗")
-	log.Println("║       DistriBox — Distributed Virtual GPU    ║")
-	log.Println("║       v0.2.0  |  Unified Launcher            ║")
-	log.Println("╚══════════════════════════════════════════════╝")
+	// Enable ANSI escape codes on Windows consoles
+	enableVirtualTerminal()
+
+	const cyan = "\033[36m"
+	const purple = "\033[35m"
+	const green = "\033[32m"
+	const yellow = "\033[33m"
+	const dim = "\033[2m"
+	const reset = "\033[0m"
+	const bold = "\033[1m"
+
+	fmt.Print("\n")
+	fmt.Print(purple + bold + "     ⚡ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ⚡\n" + reset)
+	fmt.Print(purple + bold + "     ▐" + reset + cyan + "   DISTRIBOX — Distributed Virtual GPU   " + purple + "▌\n" + reset)
+	fmt.Print(purple + bold + "     ▐" + reset + "  " + green + "v0.2.0" + dim + "  |  Unified Launcher                 " + purple + "▌\n" + reset)
+	fmt.Print(purple + bold + "     ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▌\n" + reset)
+	fmt.Print(purple + bold + "     ▐" + reset + yellow + "  One GPU. Any Device. Zero Config.     " + purple + "▌\n" + reset)
+	fmt.Print(purple + bold + "     ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▌\n" + reset)
+	fmt.Print("\n")
+	fmt.Print(dim + "  Dashboard → http://localhost:13801\n" + reset)
+	fmt.Print(dim + "  gRPC      → :13800  |  IPC → :9876\n" + reset)
+	fmt.Print("\n")
+}
+
+func enableVirtualTerminal() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	kernel32 := syscall.MustLoadDLL("kernel32.dll")
+	getStdHandle := kernel32.MustFindProc("GetStdHandle")
+	getConsoleMode := kernel32.MustFindProc("GetConsoleMode")
+	setConsoleMode := kernel32.MustFindProc("SetConsoleMode")
+
+	const STD_OUTPUT_HANDLE = ^uintptr(0) - 11 // -11
+	const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+	handle, _, _ := getStdHandle.Call(STD_OUTPUT_HANDLE)
+	if handle == 0 || handle == ^uintptr(0) {
+		return
+	}
+	var mode uint32
+	ret, _, _ := getConsoleMode.Call(handle, uintptr(unsafe.Pointer(&mode)))
+	if ret == 0 {
+		return
+	}
+	setConsoleMode.Call(handle, uintptr(mode|ENABLE_VIRTUAL_TERMINAL_PROCESSING))
 }
 
 // ── Full Stack (VGPU Core + Local Worker) ──────────────

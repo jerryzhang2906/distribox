@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DistriBox — Distributed Virtual GPU</title>
+<style>
+:root {
+  --bg: #060b14; --surface: rgba(16,24,48,0.85); --border: rgba(0,212,255,0.15);
+  --text: #e0e6f0; --muted: #6070a0; --accent: #00d4ff; --green: #00e676;
+  --red: #ff3d60; --purple: #bb86fc;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.6;
+}
+/* Particles */
+#particles { position:fixed; top:0; left:0; width:100%; height:100%; z-index:0; pointer-events:none; }
+/* Hero */
+.hero {
+  position:relative; z-index:1;
+  text-align:center; padding:80px 20px 60px;
+}
+.hero h1 {
+  font-size: 56px; font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero .subtitle { font-size:18px; color:var(--muted); margin-top:12px; }
+.hero .badge-row { display:flex; gap:10px; justify-content:center; margin-top:20px; flex-wrap:wrap; }
+.badge {
+  padding:6px 16px; border-radius:20px; font-size:12px; font-weight:600;
+  border:1px solid var(--border); backdrop-filter:blur(8px);
+}
+.badge.win { color:var(--accent); background:rgba(0,212,255,0.1); }
+.badge.android { color:var(--green); background:rgba(0,230,118,0.1); }
+.badge.go { color:#ffb74d; background:rgba(255,183,77,0.1); }
+.badge.mit { color:var(--muted); background:rgba(255,255,255,0.05); }
+
+/* Content */
+.container { max-width:960px; margin:0 auto; padding:0 24px; position:relative; z-index:1; }
+.section { margin-bottom:48px; }
+.section h2 { font-size:24px; margin-bottom:16px; color:var(--accent); }
+.section p { color:var(--muted); margin-bottom:12px; }
+
+/* Cards */
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+.card {
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; padding:24px; transition:all 0.3s;
+}
+.card:hover { border-color:var(--accent); }
+.card h3 { font-size:16px; margin-bottom:8px; }
+.card p { font-size:14px; color:var(--muted); }
+
+/* Code */
+pre {
+  background: rgba(0,0,0,0.4); border:1px solid var(--border);
+  border-radius:8px; padding:16px; overflow-x:auto;
+  font-family: 'Cascadia Code','Fira Code',monospace; font-size:13px;
+  color:var(--accent);
+}
+code { font-family:'Cascadia Code','Fira Code',monospace; font-size:13px; }
+
+/* Footer */
+footer { text-align:center; padding:40px; color:var(--muted); font-size:13px; position:relative; z-index:1; }
+
+/* Buttons */
+.btn {
+  display:inline-block; padding:10px 24px; border-radius:24px;
+  font-weight:600; text-decoration:none; transition:all 0.2s;
+}
+.btn.primary { background:linear-gradient(135deg,#0066cc,#0044aa); color:white; }
+.btn.primary:hover { box-shadow:0 0 20px rgba(0,100,255,0.3); }
+.btn.ghost { border:1px solid var(--border); color:var(--accent); }
+.btn.ghost:hover { border-color:var(--accent); background:rgba(0,212,255,0.05); }
+.btn-row { display:flex; gap:12px; justify-content:center; margin-top:24px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<section class="hero">
+  <div style="font-size:64px">⚡</div>
+  <h1>DistriBox</h1>
+  <p class="subtitle">把多台设备的算力聚合成一个虚拟 GPU</p>
+  <div class="badge-row">
+    <span class="badge win">🖥 Windows</span>
+    <span class="badge android">📱 Android</span>
+    <span class="badge go">Go + C</span>
+    <span class="badge mit">MIT</span>
+  </div>
+  <div class="btn-row">
+    <a href="https://github.com/jerryzhang2906/distribox/releases" class="btn primary">⬇ Download v0.2.0</a>
+    <a href="https://github.com/jerryzhang2906/distribox" class="btn ghost">⭐ GitHub</a>
+  </div>
+</section>
+
+<div class="container">
+
+<div class="section">
+  <h2>🤔 一句话解释</h2>
+  <p>就像蓝牙耳机自动连接手机一样，DistriBox 让你的 AI 应用自动使用局域网里所有设备的 GPU 算力 — <strong>无需任何配置</strong>。</p>
+</div>
+
+<div class="section">
+  <h2>🚀 30 秒开始</h2>
+  <pre># Windows PC
+.\distribox.exe
+# → 打开 http://localhost:13801
+
+# Android Phone
+# → 安装 APK → 点 START WORKER
+# → 手机自动通过 mDNS 发现电脑</pre>
+</div>
+
+<div class="section">
+  <h2>✨ 核心能力</h2>
+  <div class="cards">
+    <div class="card">
+      <h3>🔌 系统级虚拟 GPU</h3>
+      <p>通过 OpenCL ICD 技术注册为系统级虚拟设备。任何 OpenCL 应用无需修改即可使用。</p>
+    </div>
+    <div class="card">
+      <h3>📡 零配置局域网</h3>
+      <p>mDNS 自动发现 + 加密 Cluster Token。同一 WiFi 下的设备自动互相发现并安全连接。</p>
+    </div>
+    <div class="card">
+      <h3>🧠 AI 内核引擎</h3>
+      <p>14 个 GPU/CPU 双路径 AI 内核：matmul, gelu, rms_norm, softmax, rope 及更多。</p>
+    </div>
+    <div class="card">
+      <h3>📊 实时仪表盘</h3>
+      <p>Web 仪表盘监控集群状态：虚拟 GPU 规格、Worker 列表、任务吞吐、实时图表。</p>
+    </div>
+    <div class="card">
+      <h3>🔒 安全传输</h3>
+      <p>128-bit Cluster Token + mTLS 双向认证。所有通信加密，仅局域网可访问。</p>
+    </div>
+    <div class="card">
+      <h3>📱 Android 原生</h3>
+      <p>Go ARM64 原生编译的 Android App。支持 Mali/Adreno GPU + CPU 混合计算。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>🏗️ 架构</h2>
+  <pre>
+AI Application (Ollama / PyTorch)
+        │ OpenCL API
+        ▼
+┌───────────────────┐
+│ distribox_icd.dll  │  ← OpenCL ICD 拦截层 (C)
+│ (System-Level)      │
+└───────┬───────────┘
+        │ TCP :9876
+        ▼
+┌───────────────────┐
+│ distribox.exe      │  ← VGPU Core (Go)
+│ Dashboard :13801   │
+└───────┬───────────┘
+        │ gRPC :13800
+  ┌─────┴─────┐
+  ▼           ▼
+┌──────┐  ┌──────────┐
+│ PC   │  │ Android  │
+│ CPU  │  │ Mali GPU │
+└──────┘  └──────────┘</pre>
+</div>
+
+<div class="section">
+  <h2>🔧 技术栈</h2>
+  <table style="width:100%;border-collapse:collapse">
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;color:var(--muted)">网络</td><td style="padding:8px">gRPC + Protocol Buffers</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;color:var(--muted)">GPU 拦截</td><td style="padding:8px">OpenCL ICD (纯 C, 50+ API)</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;color:var(--muted)">发现</td><td style="padding:8px">mDNS 纯 Go 实现</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;color:var(--muted)">引擎</td><td style="padding:8px">Go + C + OpenCL 混合</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;color:var(--muted)">跨平台</td><td style="padding:8px">Windows x64 + Android ARM64</td></tr>
+    <tr><td style="padding:8px;color:var(--muted)">安全</td><td style="padding:8px">128-bit Token + mTLS</td></tr>
+  </table>
+</div>
+
+</div>
+
+<footer>
+  DistriBox © 2025-2026 · <a href="https://github.com/jerryzhang2906/distribox" style="color:var(--accent)">GitHub</a> · MIT License
+</footer>
+
+<script>
+// Particles (same as dashboard)
+(function(){
+  const c=document.getElementById('particles'),x=c.getContext('2d');
+  let p=[],w,h;
+  function r(){ w=c.width=innerWidth; h=c.height=innerHeight; }
+  addEventListener('resize',r); r();
+  for(let i=0;i<40;i++)p.push({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,s:Math.random()*2+.5,a:Math.random()*.3+.1});
+  function d(){
+    x.clearRect(0,0,w,h);
+    p.forEach(q=>{
+      q.x+=q.vx;q.y+=q.vy;
+      if(q.x<0)q.x=w;if(q.x>w)q.x=0;if(q.y<0)q.y=h;if(q.y>h)q.y=0;
+      x.beginPath();x.arc(q.x,q.y,q.s,0,Math.PI*2);
+      x.fillStyle=`rgba(0,212,255,${q.a})`;x.fill();
+      p.forEach(r=>{const dx=q.x-r.x,dy=q.y-r.y,dt=Math.sqrt(dx*dx+dy*dy);if(dt<150){x.beginPath();x.moveTo(q.x,q.y);x.lineTo(r.x,r.y);x.strokeStyle=`rgba(0,212,255,${.03*(1-dt/150)})`;x.lineWidth=.5;x.stroke()}})
+    });
+    requestAnimationFrame(d)
+  }
+  d()
+})();
+</script>
+</body>
+</html>
