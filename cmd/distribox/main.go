@@ -1,26 +1,21 @@
 /*
  * cmd/distribox/main.go — DistriBox Unified Launcher v0.3.0
  *
- * Single executable that runs the complete DistriBox stack:
+ * Single executable with native Windows GUI (default) or console mode.
  *   - Virtual GPU Core (IPC server + gRPC orchestrator + HTTP API)
  *   - Local Worker (CPU/GPU compute provider)
- *   - Live console status panel (replaces web dashboard)
+ *   - Native Win32 GUI (default) or ANSI console panel (--console)
  *   - mDNS auto-discovery
  *
  * Usage:
- *   distribox.exe                              # Full stack (VGPU + Worker + Console)
- *   distribox.exe --mode vgpu                  # VGPU Core only
- *   distribox.exe --mode worker                # Worker only
- *   distribox.exe --mode both                  # Full stack (default)
- *   distribox.exe --no-worker                  # VGPU Core only
- *   distribox.exe install                      # Install ICD + GPU interception
- *   distribox.exe status                       # Show cluster status
- *   distribox.exe version                      # Show version
- *   distribox.exe device create [--auto]       # Create virtual GPU
- *   distribox.exe device status                # Virtual GPU details
- *   distribox.exe device remove                # Remove virtual GPU
- *   distribox.exe worker list                  # List workers
- *   distribox.exe worker set <id> [opts]       # Configure worker
+ *   distribox.exe                               # GUI window (double-click)
+ *   distribox.exe --console                     # Terminal mode with ANSI panel
+ *   distribox.exe --mode vgpu                   # VGPU Core only
+ *   distribox.exe --mode worker                 # Worker only
+ *   distribox.exe install                       # Install ICD
+ *   distribox.exe status                        # Cluster status
+ *   distribox.exe device create [--auto]        # Create virtual GPU
+ *   distribox.exe worker list                   # List workers
  */
 
 package main
@@ -69,6 +64,7 @@ const (
 var (
 	mode             = flag.String("mode", "both", "Run mode: vgpu, worker, both")
 	noWorker         = flag.Bool("no-worker", false, "Disable local worker")
+	consoleMode      = flag.Bool("console", false, "Use terminal console instead of GUI window")
 	ipcAddr          = flag.String("ipc-addr", "127.0.0.1:9876", "IPC listen address")
 	grpcPort         = flag.Int("grpc-port", 13800, "gRPC port")
 	httpPort         = flag.Int("http-port", 13801, "HTTP API port")
@@ -85,7 +81,7 @@ func main() {
 		*mode = "vgpu"
 	}
 
-	// Handle subcommands (CLI mode)
+	// Handle subcommands (always console mode)
 	args := flag.Args()
 	if len(args) > 0 {
 		runSubcommand(args)
@@ -93,6 +89,64 @@ func main() {
 	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	// ── GUI mode (default when double-clicked on Windows) ──
+	if runtime.GOOS == "windows" && !*consoleMode {
+		runGUIMode()
+		return
+	}
+
+	// ── Console mode (--console flag or non-Windows) ──────
+	setConsoleTitle("DistriBox v0.3.0 — Distributed Virtual GPU")
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "\nFATAL: %v\n", r)
+		}
+		fmt.Print("\nPress Enter to exit...")
+		fmt.Scanln()
+	}()
+
+	runConsoleMode()
+}
+
+// runGUIMode starts the backend and launches the native Win32 GUI
+func runGUIMode() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	log.Println("[MODE] GUI — Full stack with native Windows window")
+	clusterToken := generateToken()
+
+	vgpuReady := make(chan struct{})
+	go func() {
+		if err := startVGPU(ctx, clusterToken, vgpuReady); err != nil {
+			log.Fatalf("VGPU Core failed: %v", err)
+		}
+	}()
+
+	select {
+	case <-vgpuReady:
+	case <-time.After(5 * time.Second):
+		log.Fatal("VGPU Core failed to start")
+	}
+
+	go func() {
+		if err := startWorker(ctx, fmt.Sprintf("localhost:%d", *grpcPort), clusterToken); err != nil {
+			log.Printf("Local worker error: %v", err)
+		}
+	}()
+
+	// Launch GUI — blocks until window is closed
+	runGUI(*httpPort)
+
+	// Cleanup when window closes
+	log.Println("GUI closed — shutting down...")
+	cancel()
+	time.Sleep(300 * time.Millisecond)
+}
+
+// runConsoleMode is the terminal-based mode (--console flag)
+func runConsoleMode() {
 	printBanner()
 
 	switch strings.ToLower(*mode) {
@@ -807,6 +861,21 @@ func generateToken() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func isSubcommand() bool {
+	args := flag.Args()
+	return len(args) > 0
+}
+
+func setConsoleTitle(title string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	kernel32 := syscall.MustLoadDLL("kernel32.dll")
+	setConsoleTitleW := kernel32.MustFindProc("SetConsoleTitleW")
+	titleUTF16, _ := syscall.UTF16PtrFromString(title)
+	setConsoleTitleW.Call(uintptr(unsafe.Pointer(titleUTF16)))
 }
 
 func getDefaultName() string {

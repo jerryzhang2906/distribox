@@ -1,14 +1,15 @@
 /*
- * vgpu/server/dashboard.go — HTTP API + ICD management
+ * vgpu/server/dashboard.go — HTTP API + ICD management + embedded dashboard
  *
- * Provides REST API for console panel and external clients.
- * The web dashboard HTML has been removed — replaced by console UI.
- * SSE hub retained for external clients that want real-time push.
+ * Serves a modern dark-themed dashboard at /.
+ * REST API for console/GUI/CLI clients.
+ * SSE hub for real-time push.
  */
 
 package server
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,30 +25,19 @@ import (
 	"github.com/distribox/vgpu/monitor"
 )
 
-// ── Status page (simple JSON, replaces dashboard HTML) ──
+//go:embed dashboard.html
+var dashboardHTML []byte
+
+// ── Dashboard HTML handler ──────────────────────────────
 
 func StatusPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":  "DistriBox VGPU Core",
-		"version":  "v0.3.0",
-		"endpoints": []string{
-			"/api/v1/status",
-			"/api/v1/workers",
-			"/api/v1/device",
-			"/api/v1/icd/status",
-			"/api/v1/icd/install",
-			"/api/v1/icd/uninstall",
-			"/api/v1/display/install",
-			"/api/v1/display/uninstall",
-			"/api/v1/gl/install",
-		},
-	})
+	w.Write(dashboardHTML)
 }
 
 // ── SSE (Server-Sent Events) Hub ──────────────────────
