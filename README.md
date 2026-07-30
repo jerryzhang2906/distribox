@@ -320,6 +320,21 @@ $env:ANDROID_NDK_HOME = "你的NDK路径"
 
 ---
 
+## 🆕 What's New in v0.4.0
+
+| Feature | Description |
+|---------|-------------|
+| 📱 **Real Android GPU** | CGO + /proc + libOpenCL.so hardware detection — no more hardcoded fake data |
+| 🚀 **Phone GPU Distributed** | 128×128 matmul executed on phone Mali GPU via gRPC, verified E2E |
+| 🎮 **Vulkan Layer v3** | Shadow state tracking + IPC client + compute dispatch redirection |
+| 🔧 **CUDA Proxy v3** | Kernel name tracking + buffer data capture + IPC redirection |
+| 🛡️ **ICD Deadlock Fix** | Local worker ICD re-entry guard via gRPC peer address detection |
+| 🧪 **57 Tests** | capability (10) + engine (24) + IPC (7) + buffer (8) + integration (4) + distributed (4) |
+
+[Full Changelog](https://github.com/jerryzhang2906/distribox/compare/v0.3.1...v0.4.0)
+
+---
+
 ## 🤝 贡献
 
 欢迎 Issue 和 PR！
