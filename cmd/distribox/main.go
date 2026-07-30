@@ -42,9 +42,9 @@ import (
 
 	"google.golang.org/grpc"
 
-	distriv1 "github.com/distribox/pkg/protocol/distri/v1"
 	"github.com/distribox/pkg/discovery"
 	"github.com/distribox/pkg/installer"
+	distriv1 "github.com/distribox/pkg/protocol/distri/v1"
 	"github.com/distribox/vgpu/calibrate"
 	"github.com/distribox/vgpu/mem"
 	"github.com/distribox/vgpu/monitor"
@@ -497,7 +497,40 @@ func startVGPU(ctx context.Context, clusterToken string, ready chan<- struct{}) 
 	}
 
 	ready <- struct{}{}
+
+	// UDP broadcast responder (fallback when mDNS multicast blocked)
+	go startBroadcastResponder(*grpcPort, clusterToken)
+
 	return nil
+}
+
+// ── UDP broadcast responder ─────────────────────────────
+
+func startBroadcastResponder(port int, token string) {
+	addr := &net.UDPAddr{Port: port}
+	conn, err := net.ListenUDP("udp4", addr)
+	if err != nil {
+		log.Printf("Broadcast responder: %v (non-fatal)", err)
+		return
+	}
+	defer conn.Close()
+
+	log.Printf("Broadcast responder: listening on UDP :%d", port)
+	buf := make([]byte, 512)
+	for {
+		n, remote, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			continue
+		}
+		var msg struct {
+			Type string `json:"type"`
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(buf[:n], &msg) == nil && msg.Type == "discover" && msg.Role == "worker" {
+			reply := fmt.Sprintf(`{"type":"orchestrator_hello","role":"orchestrator","port":%d,"token":"%s"}`, port, token)
+			conn.WriteTo([]byte(reply), remote)
+		}
+	}
 }
 
 // ── Worker startup ──────────────────────────────────────
@@ -686,10 +719,10 @@ func deviceCreate(args []string) {
 	}
 
 	spec := map[string]interface{}{
-		"name":               *name,
-		"vram_total":         uint64(*vramGB * 1024 * 1024 * 1024),
-		"compute_units":      *cu,
-		"max_clock_mhz":      *clock,
+		"name":                *name,
+		"vram_total":          uint64(*vramGB * 1024 * 1024 * 1024),
+		"compute_units":       *cu,
+		"max_clock_mhz":       *clock,
 		"max_work_group_size": 256,
 		"max_work_item_sizes": [3]uint64{1024, 1024, 64},
 	}

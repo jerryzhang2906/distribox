@@ -1,6 +1,6 @@
 <p align="center">
   <br>
-  <img src="https://img.shields.io/badge/DistriBox-v0.3.0-00d4ff?style=for-the-badge" alt="version">
+  <img src="https://img.shields.io/badge/DistriBox-v0.3.1-00d4ff?style=for-the-badge" alt="version">
   <br><br>
   <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=32&duration=3000&pause=1000&color=00D4FF&center=true&vCenter=true&width=600&lines=%F0%9F%94%AE+DistriBox;Distributed+Virtual+GPU;One+GPU.+Any+Device." alt="DistriBox" />
 </p>
@@ -75,27 +75,25 @@ DistriBox 是一个**分布式虚拟 GPU 平台**。它把多台设备（PC、�
 ### 第二步：启动 PC
 
 ```powershell
-# 解压后双击 distribox.exe，自动打开浏览器仪表盘
+# 解压后双击 distribox.exe，自动弹出深色仪表盘窗口
 .\distribox.exe
 
 # 或纯控制台模式
 .\distribox.exe --console
 ```
 
-双击运行后，浏览器会自动打开赛博朋克风格的深色仪表盘 (`http://localhost:13801`)：
+双击运行后，会弹出内置的赛博朋克风格深色仪表盘：
 
 ```
      ⚡ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ⚡
      ▐   DISTRIBOX — Distributed Virtual GPU   ▐
-     ▐  v0.3.0  |  Unified Launcher            ▐
+     ▐  v0.3.1  |  Unified Launcher            ▐
      ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐
      ▐  One GPU. Any Device. Zero Config.      ▐
      ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐
 
-  Dashboard → http://localhost:13801
+  API → localhost:13801
 ```
-
-打开浏览器访问 `http://localhost:13801`，你会看到实时的集群仪表盘。
 
 ### 第三步：连接手机
 
@@ -157,10 +155,10 @@ gpu-z.exe
 ## 🔧 命令行
 
 ```powershell
-# GUI 模式（默认，双击自动打开浏览器仪表盘）
+# GUI 模式（默认，双击弹出内置深色仪表盘）
 .\distribox.exe
 
-# 控制台模式（终端内运行，不启动浏览器）
+# 控制台模式（终端内 ANSI 实时面板）
 .\distribox.exe --console
 
 # 只启动 VGPU Core（让其他设备连过来）

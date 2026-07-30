@@ -255,7 +255,7 @@ func (d *Discovery) browseLoop() {
 	buf := make([]byte, 1500)
 
 	// Query multiple times (mDNS is unreliable by nature)
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := 0; attempt < 15; attempt++ {
 		select {
 		case <-d.stopCh:
 			return
@@ -429,7 +429,7 @@ func parseMDNSResponse(data []byte, targetService string) *DeviceInfo {
 		info.Host = "unknown"
 	}
 
-	if info.ProtocolVersion != "" && info.Name != "" {
+	if info.ProtocolVersion != "" && info.Name != "" && info.Host != "" && info.Host != "unknown" && info.Host != "127.0.0.1" {
 		return info
 	}
 	return nil
@@ -464,8 +464,18 @@ func parseDNSName(data []byte, offset int) ([]byte, int) {
 			return data[start : offset+1], offset + 1 // include null terminator
 		}
 		if length&0xC0 == 0xC0 {
-			// Compressed name — skip
-			return data[start : offset+2], offset + 2
+			// Compressed name — follow the pointer
+			if offset+1 >= len(data) {
+				return nil, 0
+			}
+			ptr := int(uint16(length&0x3F)<<8 | uint16(data[offset+1]))
+			if ptr >= len(data) {
+				return nil, 0
+			}
+			resolved, _ := parseDNSName(data, ptr)
+			// Return the compressed form (2 bytes) as the name representation,
+			// but the caller will use the offset past these 2 bytes
+			return resolved, offset + 2
 		}
 		offset += 1 + length
 	}

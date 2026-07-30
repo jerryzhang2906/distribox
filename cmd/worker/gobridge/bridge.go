@@ -9,6 +9,9 @@
 package gobridge
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/distribox/cmd/worker/agent"
 	"github.com/distribox/cmd/worker/capability"
 	"github.com/distribox/cmd/worker/monitor"
@@ -119,7 +122,7 @@ func discoverOrchestrator() string {
 	select {
 	case device := <-ch:
 		if device.Role == "orchestrator" {
-			return device.Host + ":" + string(rune(device.Port))
+			return fmt.Sprintf("%s:%d", device.Host, device.Port)
 		}
 	default:
 	}
@@ -127,15 +130,12 @@ func discoverOrchestrator() string {
 }
 
 func autoConnectLoop(name string) {
-	// Background loop: keep trying to discover and connect
-	// In production, this would use Android's WorkManager or AlarmManager
 	for {
 		addr := discoverOrchestrator()
 		if addr != "" {
 			StartWorker(addr, "", name)
 			return
 		}
-		// Sleep and retry (in real app, use exponential backoff)
-		// time.Sleep(10 * time.Second) — not available in gomobile
+		time.Sleep(15 * time.Second)
 	}
 }
