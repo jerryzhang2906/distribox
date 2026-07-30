@@ -1,6 +1,6 @@
 <p align="center">
   <br>
-  <img src="https://img.shields.io/badge/DistriBox-v0.2.0-00d4ff?style=for-the-badge" alt="version">
+  <img src="https://img.shields.io/badge/DistriBox-v0.3.0-00d4ff?style=for-the-badge" alt="version">
   <br><br>
   <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=32&duration=3000&pause=1000&color=00D4FF&center=true&vCenter=true&width=600&lines=%F0%9F%94%AE+DistriBox;Distributed+Virtual+GPU;One+GPU.+Any+Device." alt="DistriBox" />
 </p>
@@ -75,16 +75,19 @@ DistriBox 是一个**分布式虚拟 GPU 平台**。它把多台设备（PC、�
 ### 第二步：启动 PC
 
 ```powershell
-# 解压后双击运行，或命令行：
+# 解压后双击 distribox.exe，自动打开浏览器仪表盘
 .\distribox.exe
+
+# 或纯控制台模式
+.\distribox.exe --console
 ```
 
-你会看到：
+双击运行后，浏览器会自动打开赛博朋克风格的深色仪表盘 (`http://localhost:13801`)：
 
 ```
      ⚡ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ⚡
      ▐   DISTRIBOX — Distributed Virtual GPU   ▐
-     ▐  v0.2.0  |  Unified Launcher            ▐
+     ▐  v0.3.0  |  Unified Launcher            ▐
      ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐
      ▐  One GPU. Any Device. Zero Config.      ▐
      ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐
@@ -154,8 +157,11 @@ gpu-z.exe
 ## 🔧 命令行
 
 ```powershell
-# 完整模式（VGPU Core + Worker 同时启动）
+# GUI 模式（默认，双击自动打开浏览器仪表盘）
 .\distribox.exe
+
+# 控制台模式（终端内运行，不启动浏览器）
+.\distribox.exe --console
 
 # 只启动 VGPU Core（让其他设备连过来）
 .\distribox.exe --mode vgpu
@@ -264,10 +270,12 @@ $env:ANDROID_NDK_HOME = "你的NDK路径"
 ```
 
 **App 功能:**
+- 🎨 Material Dark UI — 现代化深色界面，脉冲状态指示器
 - ⚡ 一键连接 — 打开即用，mDNS 自动发现
 - 📊 实时显示 CPU/GPU/内存状态
 - 🎚️ 算力滑动条调节贡献比例
-- 🔔 后台运行 + 通知栏状态
+- 🔔 前台服务 + WakeLock 保活，通知栏状态
+- 📋 滑动日志面板，实时查看连接状态
 
 ---
 
