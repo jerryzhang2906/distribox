@@ -4,7 +4,7 @@
  * Used on non-Windows platforms. Provides conservative defaults.
  */
 
-//go:build !windows
+//go:build (!windows && !linux) || (linux && !cgo)
 
 package monitor
 
@@ -21,5 +21,9 @@ func sampleBattery() (pct float64, charging bool) {
 }
 
 func sampleMemory() (usedMB int64, availMB int64) {
-	return 512, 4096
+	return 0, 0
+}
+
+func sampleThermal() (tempC float64, throttled bool) {
+	return 0, false
 }

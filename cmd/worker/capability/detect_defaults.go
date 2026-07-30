@@ -5,7 +5,7 @@
  * These provide conservative defaults; platform-specific files can override.
  */
 
-//go:build !windows
+//go:build (!windows && !linux) || (linux && !cgo)
 
 package capability
 

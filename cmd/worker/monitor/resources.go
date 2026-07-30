@@ -73,11 +73,7 @@ func (m *ResourceMonitor) sample() {
 	snap.BatteryPct, snap.Charging = sampleBattery()
 
 	// ── Thermal ─────────────────────────────────────
-	// No standard user-mode API for CPU/GPU temperature on any platform.
-	// Requires kernel driver or third-party WMI provider (e.g., OpenHardwareMonitor).
-	// Leaving as sane defaults for now.
-	snap.ThermalThrottled = false
-	snap.TemperatureC = 45.0
+	snap.TemperatureC, snap.ThermalThrottled = sampleThermal()
 
 	m.mu.Lock()
 	m.latest = snap

@@ -1,6 +1,6 @@
 <p align="center">
   <br>
-  <img src="https://img.shields.io/badge/DistriBox-v0.3.1-00d4ff?style=for-the-badge" alt="version">
+  <img src="https://img.shields.io/badge/DistriBox-v0.4.0-00d4ff?style=for-the-badge" alt="version">
   <br><br>
   <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=32&duration=3000&pause=1000&color=00D4FF&center=true&vCenter=true&width=600&lines=%F0%9F%94%AE+DistriBox;Distributed+Virtual+GPU;One+GPU.+Any+Device." alt="DistriBox" />
 </p>
@@ -87,7 +87,7 @@ DistriBox 是一个**分布式虚拟 GPU 平台**。它把多台设备（PC、�
 ```
      ⚡ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ⚡
      ▐   DISTRIBOX — Distributed Virtual GPU   ▐
-     ▐  v0.3.1  |  Unified Launcher            ▐
+     ▐  v0.4.0  |  Unified Launcher            ▐
      ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐
      ▐  One GPU. Any Device. Zero Config.      ▐
      ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐

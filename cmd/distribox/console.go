@@ -343,7 +343,7 @@ func ShowMenu(httpPort int) {
 
 	clearScreen()
 	fmt.Print(cCyan + cBold)
-	fmt.Println("  ⚡ DISTRIBOX v0.3.0 — Interactive Console")
+	fmt.Println("  ⚡ DISTRIBOX v0.4.0 — Interactive Console")
 	fmt.Print(cReset)
 	fmt.Println()
 	fmt.Println(cDim + "  Checking cluster status..." + cReset)

@@ -220,6 +220,12 @@ type systemPowerStatus struct {
 	BatteryFullLifeTime uint32
 }
 
+func sampleThermal() (tempC float64, throttled bool) {
+	// No standard user-mode API for CPU/GPU temperature on Windows.
+	// Requires kernel driver or WMI provider (e.g., OpenHardwareMonitor).
+	return 0, false
+}
+
 func sampleBattery() (pct float64, charging bool) {
 	kernel32 := syscall.MustLoadDLL("kernel32.dll")
 	getSystemPowerStatus := kernel32.MustFindProc("GetSystemPowerStatus")

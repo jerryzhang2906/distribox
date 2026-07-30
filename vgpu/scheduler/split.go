@@ -108,6 +108,19 @@ func (s *Scheduler) TotalCapability() float64 {
 //   3. Align splits to local work group size boundaries
 //   4. Respect per-worker memory limits
 //
+// SplitNDRangeForWorkers splits an NDRange across a specific list of workers
+func (s *Scheduler) SplitNDRangeForWorkers(task *ComputeTask, workers []*WorkerInfo) ([]*SubTask, error) {
+	if len(workers) == 0 {
+		return nil, fmt.Errorf("no workers available")
+	}
+
+	totalCap := 0.0
+	for _, w := range workers {
+		totalCap += w.CapabilityScore
+	}
+	return s.splitNDRange(task, workers, totalCap)
+}
+
 func (s *Scheduler) SplitNDRange(task *ComputeTask) ([]*SubTask, error) {
 	workers := s.GetActiveWorkers()
 	if len(workers) == 0 {
@@ -115,6 +128,11 @@ func (s *Scheduler) SplitNDRange(task *ComputeTask) ([]*SubTask, error) {
 	}
 
 	totalCap := s.TotalCapability()
+	return s.splitNDRange(task, workers, totalCap)
+}
+
+// splitNDRange is the shared implementation
+func (s *Scheduler) splitNDRange(task *ComputeTask, workers []*WorkerInfo, totalCap float64) ([]*SubTask, error) {
 	if totalCap <= 0 {
 		return nil, fmt.Errorf("total capability is zero")
 	}

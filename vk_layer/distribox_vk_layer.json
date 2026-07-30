@@ -5,8 +5,8 @@
     "type": "GLOBAL",
     "library_path": ".\\distribox_vk_layer.dll",
     "api_version": "1.2.0",
-    "implementation_version": "2",
-    "description": "DistriBox Virtual GPU v2 — compute dispatch interception + draw tracing + FPS monitoring",
+    "implementation_version": "3",
+    "description": "DistriBox Virtual GPU v3 — compute dispatch redirect to distributed workers + FPS monitoring",
     "disable_environment": {
       "DISABLE_DISTRIBOX_VK_LAYER": "1"
     },

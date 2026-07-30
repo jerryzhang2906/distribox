@@ -17,6 +17,7 @@ import (
 	"log"
 	"net"
 	"time"
+	"unsafe"
 
 	distriv1 "github.com/distribox/pkg/protocol/distri/v1"
 	"github.com/distribox/vgpu/mem"
@@ -140,6 +141,30 @@ type IPCMessage struct {
 	GlobalOffset []uint64 `json:"global_offset,omitempty"`
 	Local      []uint64 `json:"local,omitempty"`
 	Args       []json.RawMessage `json:"args,omitempty"`
+
+	// Vulkan dispatch fields
+	GroupCount []uint32 `json:"group_count,omitempty"`
+	Pipeline   string   `json:"pipeline,omitempty"`
+	Protocol   string   `json:"protocol,omitempty"`
+
+	// CUDA launch fields
+	Grid      []uint32 `json:"grid,omitempty"`
+	Block     []uint32 `json:"block,omitempty"`
+	SharedMem uint32   `json:"shared_mem,omitempty"`
+	Stream    string   `json:"stream,omitempty"`
+
+	// Buffer data for Vulkan/CUDA dispatch messages
+	Buffers []IPCBufferData `json:"buffers,omitempty"`
+}
+
+// IPCBufferData carries buffer or scalar content in IPC messages
+type IPCBufferData struct {
+	ID        string `json:"id"`
+	Size      uint64 `json:"size"`
+	DataB64   string `json:"data_b64,omitempty"`
+	Direction string `json:"direction,omitempty"` // "in", "out", "inout"
+	Offset    uint64 `json:"offset,omitempty"`
+	Kind      string `json:"kind,omitempty"` // "buffer" (default), "scalar_int32", "scalar_float32"
 }
 
 type IPCResponse struct {
@@ -186,6 +211,14 @@ func (s *IPCServer) processMessage(line string) string {
 		return s.handleNDRange(msg, reqID)
 	case "queue_finish":
 		return s.handleQueueFinish(msg, reqID)
+	case "vk_hello":
+		return s.handleVKHello(msg, reqID)
+	case "vk_dispatch":
+		return s.handleVKDispatch(msg, reqID)
+	case "cuda_hello":
+		return s.handleCUDAHello(msg, reqID)
+	case "cuda_launch":
+		return s.handleCUDALaunch(msg, reqID)
 	default:
 		return mustMarshal(IPCResponse{Type: "error", RequestID: reqID, Error: fmt.Sprintf("unknown type: %s", msg.Type)})
 	}
@@ -342,11 +375,21 @@ func (s *IPCServer) handleNDRange(msg IPCMessage, reqID string) string {
 
 	// Check if we have active workers
 	workers := s.sched.GetActiveWorkers()
-	if len(workers) > 0 {
-		return s.dispatchToWorkers(msg, reqID, taskID, bufferArgs, workers)
+	log.Printf("NDRange %s: %d active workers, orch=%v", msg.KernelName, len(workers), s.orchestrator != nil)
+	if len(workers) > 0 && s.orchestrator != nil {
+		// Skip local (in-process) workers to avoid re-entrant deadlock:
+		// IPC → gRPC → local worker → GPU → OpenCL → ICD → IPC (busy!)
+		remoteWorkers := filterRemoteWorkers(workers, s.orchestrator)
+		log.Printf("NDRange %s: %d remote workers after filter", msg.KernelName, len(remoteWorkers))
+		if len(remoteWorkers) > 0 {
+			return s.dispatchToWorkers(msg, reqID, taskID, bufferArgs, remoteWorkers)
+		}
+		// All workers are local — fall through to local execution
+		log.Printf("NDRange %s: all %d workers are local, executing locally (avoids ICD re-entry)",
+			msg.KernelName, len(workers))
 	}
 
-	// ── No workers: execute locally via Go fallback engine ──
+	// ── No remote workers: execute locally via Go fallback engine ──
 	return s.executeLocally(msg, reqID, taskID, bufferArgs)
 }
 
@@ -364,7 +407,7 @@ func (s *IPCServer) dispatchToWorkers(msg IPCMessage, reqID, taskID string, buff
 		ArgBuffers:  bufferArgs,
 	}
 
-	subTasks, err := s.sched.SplitNDRange(task)
+	subTasks, err := s.sched.SplitNDRangeForWorkers(task, workers)
 	if err != nil {
 		log.Printf("NDRange split failed: %v", err)
 		return mustMarshal(IPCResponse{Type: "error", RequestID: reqID, Error: err.Error()})
@@ -373,9 +416,23 @@ func (s *IPCServer) dispatchToWorkers(msg IPCMessage, reqID, taskID string, buff
 	log.Printf("NDRange %s: split into %d subtasks across %d workers",
 		task.KernelName, len(subTasks), len(workers))
 
-	// If orchestrator is wired, dispatch via gRPC
+	// If orchestrator is wired, dispatch via gRPC (with timeout fallback)
 	if s.orchestrator != nil {
-		return s.dispatchViaGRPC(msg, reqID, taskID, subTasks, bufferArgs)
+		type dispatchResult struct {
+			resp string
+		}
+		resultCh := make(chan dispatchResult, 1)
+		go func() {
+			resultCh <- dispatchResult{s.dispatchViaGRPC(msg, reqID, taskID, subTasks, bufferArgs)}
+		}()
+
+		select {
+		case r := <-resultCh:
+			return r.resp
+		case <-time.After(5 * time.Second):
+			log.Printf("gRPC dispatch timeout for %s — falling back to local execution", msg.KernelName)
+			return s.executeLocally(msg, reqID, taskID, bufferArgs)
+		}
 	}
 
 	// Fall back to local execution
@@ -516,7 +573,7 @@ func (s *IPCServer) dispatchViaGRPC(msg IPCMessage, reqID, taskID string, subTas
 	outputData := make(map[string][]byte)
 	for _, st := range subTasks {
 		// Poll for returned buffers with timeout
-		for attempt := 0; attempt < 50; attempt++ {
+		for attempt := 0; attempt < 300; attempt++ {
 			returned := s.orchestrator.GetReturnedBuffers(st.WorkerID)
 			if len(returned) > 0 {
 				for bufID, data := range returned {
@@ -676,6 +733,362 @@ func (s *IPCServer) handleQueueFinish(msg IPCMessage, reqID string) string {
 	return mustMarshal(IPCResponse{Type: "ok", RequestID: reqID, Success: true})
 }
 
+// ── Vulkan/CUDA message handlers ────────────────────────
+
+func (s *IPCServer) handleVKHello(msg IPCMessage, reqID string) string {
+	log.Printf("Vulkan layer connected (protocol %s)", msg.Protocol)
+	return mustMarshal(IPCResponse{Type: "ok", RequestID: reqID, Success: true})
+}
+
+func (s *IPCServer) handleVKDispatch(msg IPCMessage, reqID string) string {
+	taskID := fmt.Sprintf("vk-%s", reqID)
+
+	// Convert Vulkan group counts to NDRange global sizes
+	// Vulkan compute shader: global_size = group_count * local_size
+	// For simplicity, treat group_count as the global work size
+	global := make([]uint64, 3)
+	workDim := uint32(1)
+	if len(msg.GroupCount) >= 3 {
+		global[0] = uint64(msg.GroupCount[0])
+		global[1] = uint64(msg.GroupCount[1])
+		global[2] = uint64(msg.GroupCount[2])
+		workDim = 3
+	} else if len(msg.GroupCount) >= 1 {
+		global[0] = uint64(msg.GroupCount[0])
+		workDim = 1
+	}
+
+	// Map pipeline identifier to kernel name
+	kernelName := fmt.Sprintf("vk_pipeline_%s", msg.Pipeline)
+
+	log.Printf("VK dispatch: pipeline=%s groups=%v → kernel=%s", msg.Pipeline, msg.GroupCount, kernelName)
+
+	// Check if we have active workers
+	workers := s.sched.GetActiveWorkers()
+	if len(workers) > 0 && s.orchestrator != nil {
+		// Convert to NDRange message format and dispatch
+		ndrangeMsg := IPCMessage{
+			KernelName: kernelName,
+			WorkDim:    workDim,
+			Global:     global,
+		}
+		return s.dispatchToWorkers(ndrangeMsg, reqID, taskID, nil, workers)
+	}
+
+	// No workers: execute locally
+	// For Vulkan compute, we execute the equivalent kernel on local engine
+	ndrangeMsg := IPCMessage{
+		KernelName: kernelName,
+		WorkDim:    workDim,
+		Global:     global,
+	}
+	return s.executeLocallyVK(ndrangeMsg, reqID, taskID)
+}
+
+func (s *IPCServer) handleCUDAHello(msg IPCMessage, reqID string) string {
+	log.Printf("CUDA proxy connected (protocol %s)", msg.Protocol)
+	return mustMarshal(IPCResponse{Type: "ok", RequestID: reqID, Success: true})
+}
+
+func (s *IPCServer) handleCUDALaunch(msg IPCMessage, reqID string) string {
+	taskID := fmt.Sprintf("cu-%s", reqID)
+
+	// Convert CUDA grid/block to NDRange
+	global := make([]uint64, 3)
+	local := make([]uint64, 3)
+	workDim := uint32(1)
+
+	if len(msg.Grid) >= 3 && len(msg.Block) >= 3 {
+		global[0] = uint64(msg.Grid[0]) * uint64(msg.Block[0])
+		global[1] = uint64(msg.Grid[1]) * uint64(msg.Block[1])
+		global[2] = uint64(msg.Grid[2]) * uint64(msg.Block[2])
+		local[0] = uint64(msg.Block[0])
+		local[1] = uint64(msg.Block[1])
+		local[2] = uint64(msg.Block[2])
+		workDim = 3
+	} else if len(msg.Grid) >= 1 && len(msg.Block) >= 1 {
+		global[0] = uint64(msg.Grid[0]) * uint64(msg.Block[0])
+		local[0] = uint64(msg.Block[0])
+		workDim = 1
+	}
+
+	kernelName := msg.KernelName
+	if kernelName == "" {
+		kernelName = "unknown_kernel"
+	}
+
+	log.Printf("CUDA launch: kernel=%s grid=%v block=%v shared=%d buffers=%d → NDRange global=%v local=%v",
+		kernelName, msg.Grid, msg.Block, msg.SharedMem, len(msg.Buffers), global, local)
+
+	ndrangeMsg := IPCMessage{
+		KernelName: kernelName,
+		WorkDim:    workDim,
+		Global:     global,
+		Local:      local,
+		Buffers:    msg.Buffers,
+	}
+
+	// Check workers — if buffers present, dispatch to workers
+	if len(msg.Buffers) > 0 && len(s.sched.GetActiveWorkers()) > 0 && s.orchestrator != nil {
+		return s.dispatchVKCUDA(ndrangeMsg, reqID, taskID)
+	}
+
+	return s.executeLocallyVK(ndrangeMsg, reqID, taskID)
+}
+
+// dispatchVKCUDA dispatches a VK/CUDA kernel with buffer data to workers
+func (s *IPCServer) dispatchVKCUDA(msg IPCMessage, reqID, taskID string) string {
+	// Write buffer data to VRAM first
+	bufferIDs := s.writeBuffersToVRAM(msg.Buffers)
+	defer s.cleanupVRAMBuffers(bufferIDs)
+
+	// Build kernel args from buffers
+	var args []json.RawMessage
+	for i, buf := range msg.Buffers {
+		argJSON := fmt.Sprintf(`{"index":%d,"type":"buffer","id":"%s"}`,
+			i, buf.ID)
+		args = append(args, json.RawMessage(argJSON))
+	}
+
+	ndrangeMsg := IPCMessage{
+		KernelName:  msg.KernelName,
+		WorkDim:     msg.WorkDim,
+		Global:      msg.Global,
+		Local:       msg.Local,
+		Args:        args,
+	}
+	// Use the existing NDRange dispatch (which handles VRAM → workers → VRAM merge)
+	return s.dispatchToWorkers(ndrangeMsg, reqID, taskID, bufferIDs,
+		s.sched.GetActiveWorkers())
+}
+
+// writeBuffersToVRAM creates VRAM buffers from IPC buffer data
+func (s *IPCServer) writeBuffersToVRAM(buffers []IPCBufferData) []string {
+	var ids []string
+	for _, buf := range buffers {
+		if buf.DataB64 == "" {
+			continue
+		}
+		decoded, err := hex.DecodeString(buf.DataB64)
+		if err != nil {
+			log.Printf("Buffer %s: base64 decode failed: %v", buf.ID, err)
+			continue
+		}
+
+		bufType := mem.BufferReadWrite
+		if buf.Direction == "in" {
+			bufType = mem.BufferReadOnly
+		}
+
+		_, err = s.vram.Allocate(buf.ID, uint64(len(decoded)), 0, bufType)
+		if err != nil {
+			log.Printf("Buffer %s: VRAM allocate failed: %v", buf.ID, err)
+			continue
+		}
+
+		err = s.vram.Write(buf.ID, buf.Offset, decoded)
+		if err != nil {
+			log.Printf("Buffer %s: VRAM write failed: %v", buf.ID, err)
+			continue
+		}
+
+		ids = append(ids, buf.ID)
+		log.Printf("Buffer %s: %d bytes written to VRAM (dir=%s)", buf.ID, len(decoded), buf.Direction)
+	}
+	return ids
+}
+
+func (s *IPCServer) cleanupVRAMBuffers(ids []string) {
+	for _, id := range ids {
+		s.vram.Release(id)
+	}
+}
+
+// executeLocallyVK runs a Vulkan/CUDA kernel locally via the Go engine.
+// If buffer data is provided, does a full VRAM → engine → VRAM cycle.
+// For unknown kernels without buffers, passes through to local GPU.
+func (s *IPCServer) executeLocallyVK(msg IPCMessage, reqID, taskID string) string {
+	kernelName := msg.KernelName
+
+	knownKernels := map[string]bool{
+		"vector_add": true, "matmul": true, "gelu": true, "relu": true,
+		"softmax": true, "sigmoid": true, "scalar_mul": true, "element_wise_mul": true,
+		"transpose": true, "reduce_sum": true, "layer_norm": true,
+		"rms_norm": true, "rope": true, "add_bias": true,
+	}
+
+	// ── With buffer data: full VRAM → engine → VRAM execution ──
+	if len(msg.Buffers) > 0 && knownKernels[kernelName] {
+		return s.executeLocallyVKWithBuffers(msg, reqID, taskID, kernelName)
+	}
+
+	// ── Without buffers or unknown kernel: passthrough ──
+	if !knownKernels[kernelName] {
+		log.Printf("VK/CUDA local: unknown kernel '%s' — passthrough to local GPU", kernelName)
+		return mustMarshal(map[string]interface{}{
+			"type":       "ok",
+			"request_id": reqID,
+			"success":    true,
+			"event_id":   fmt.Sprintf("evt-%s", reqID),
+			"note":       "unknown kernel, passthrough to local GPU",
+		})
+	}
+
+	// Bufferless known kernel: do minimal execution for routing verification
+	kernel := &engine.GoKernel{NameVal: kernelName}
+	global := msg.Global
+	if len(global) == 0 {
+		global = []uint64{1}
+	}
+	local := msg.Local
+	if len(local) == 0 {
+		local = make([]uint64, len(global))
+	}
+
+	err := s.localEngine.ExecuteNDRange(kernel, msg.WorkDim, global,
+		make([]uint64, len(global)), local, nil)
+	if err != nil {
+		log.Printf("VK/CUDA local execution failed: %v", err)
+		return mustMarshal(IPCResponse{Type: "error", RequestID: reqID, Error: err.Error()})
+	}
+
+	log.Printf("VK/CUDA local: %s executed (no buffers)", kernelName)
+	return mustMarshal(map[string]interface{}{
+		"type": "ok", "request_id": reqID, "success": true,
+		"event_id": fmt.Sprintf("evt-%s", reqID), "local_exec": true,
+	})
+}
+
+// executeLocallyVKWithBuffers does full VRAM → GoEngine → VRAM with buffer data
+func (s *IPCServer) executeLocallyVKWithBuffers(msg IPCMessage, reqID, taskID, kernelName string) string {
+	// Step 1: Write buffer data to VRAM
+	bufferIDs := s.writeBuffersToVRAM(msg.Buffers)
+	defer s.cleanupVRAMBuffers(bufferIDs)
+
+	// Step 2: Build kernel args — map buffer/scalar IDs to engine args
+	kernel := &engine.GoKernel{NameVal: kernelName}
+	engBufs := make(map[string]*engine.GoBuffer)
+
+	for i, buf := range msg.Buffers {
+		if buf.DataB64 == "" {
+			continue
+		}
+		decoded, err := hex.DecodeString(buf.DataB64)
+		if err != nil {
+			continue
+		}
+
+		switch buf.Kind {
+		case "scalar_int32":
+			if len(decoded) >= 4 {
+				val := int32(decoded[0]) | int32(decoded[1])<<8 | int32(decoded[2])<<16 | int32(decoded[3])<<24
+				s.localEngine.SetKernelArg(kernel, uint32(i), val)
+			}
+		case "scalar_float32":
+			if len(decoded) >= 4 {
+				bits := uint32(decoded[0]) | uint32(decoded[1])<<8 | uint32(decoded[2])<<16 | uint32(decoded[3])<<24
+				val := float32FromBits(bits)
+				s.localEngine.SetKernelArg(kernel, uint32(i), val)
+			}
+		default: // "buffer" or empty
+			engBuf, err := s.localEngine.CreateBuffer(uint64(len(decoded)), 0, decoded)
+			if err != nil {
+				log.Printf("Buffer %s: engine create failed: %v", buf.ID, err)
+				continue
+			}
+			engBufs[buf.ID] = engBuf
+			s.localEngine.SetKernelArg(kernel, uint32(i), engBuf)
+		}
+	}
+
+	// Step 3: Determine output buffers (skip scalar args, direction="out" or "inout")
+	var outputBufs []*engine.GoBuffer
+	var outputBufInfo []IPCBufferData
+	for _, buf := range msg.Buffers {
+		if buf.Kind == "scalar_int32" || buf.Kind == "scalar_float32" {
+			continue // scalars don't produce output
+		}
+		if buf.Direction == "out" || buf.Direction == "inout" {
+			if engBuf, ok := engBufs[buf.ID]; ok {
+				outputBufs = append(outputBufs, engBuf)
+				outputBufInfo = append(outputBufInfo, buf)
+			}
+		}
+	}
+
+	// If no explicit output buffers, use all buffers as output
+	if len(outputBufs) == 0 {
+		for _, buf := range msg.Buffers {
+			if engBuf, ok := engBufs[buf.ID]; ok {
+				outputBufs = append(outputBufs, engBuf)
+				outputBufInfo = append(outputBufInfo, buf)
+			}
+		}
+	}
+
+	// Step 4: Execute kernel
+	global := msg.Global
+	if len(global) == 0 {
+		global = []uint64{1}
+	}
+	local := msg.Local
+	if len(local) == 0 {
+		local = make([]uint64, len(global))
+	}
+
+	err := s.localEngine.ExecuteNDRange(kernel, msg.WorkDim, global,
+		make([]uint64, len(global)), local, outputBufs)
+	if err != nil {
+		log.Printf("VK/CUDA local: %s execution failed: %v", kernelName, err)
+		return mustMarshal(IPCResponse{Type: "error", RequestID: reqID, Error: err.Error()})
+	}
+
+	// Step 5: Read back output buffers
+	outputs := make([]map[string]interface{}, 0)
+	for i, buf := range outputBufInfo {
+		if i < len(outputBufs) && outputBufs[i] != nil {
+			data, err := s.localEngine.ReadBuffer(outputBufs[i], 0, outputBufs[i].Size())
+			if err == nil {
+				// Write results back to VRAM
+				s.vram.Write(buf.ID, 0, data)
+				outputs = append(outputs, map[string]interface{}{
+					"id":       buf.ID,
+					"size":     len(data),
+					"data_b64": hex.EncodeToString(data),
+				})
+			}
+		}
+	}
+
+	// Step 6: Cleanup engine buffers
+	for _, buf := range engBufs {
+		s.localEngine.ReleaseBuffer(buf)
+	}
+
+	log.Printf("VK/CUDA local: %s complete, %d output buffers returned", kernelName, len(outputs))
+
+	return mustMarshal(map[string]interface{}{
+		"type": "ok", "request_id": reqID, "success": true,
+		"event_id": fmt.Sprintf("evt-%s", reqID), "local_exec": true,
+		"outputs": outputs,
+	})
+}
+
+// filterRemoteWorkers returns only workers not running on localhost.
+// Local workers use the ICD proxy for GPU execution, which calls back into
+// the same IPC server, creating a re-entrant deadlock.
+func filterRemoteWorkers(workers []*scheduler.WorkerInfo, orch *OrchestratorService) []*scheduler.WorkerInfo {
+	var remote []*scheduler.WorkerInfo
+	for _, w := range workers {
+		if orch.IsSameHost(w.ID) {
+			log.Printf("  Worker %s is local (same host) — skipping gRPC dispatch", w.ID)
+			continue
+		}
+		remote = append(remote, w)
+	}
+	return remote
+}
+
 // ── Helpers ────────────────────────────────────────────
 
 func totalBytes(data map[string][]byte) int64 {
@@ -691,6 +1104,10 @@ func safeLast(s []string) []string {
 		return nil
 	}
 	return s[len(s)-1:]
+}
+
+func float32FromBits(bits uint32) float32 {
+	return *(*float32)(unsafe.Pointer(&bits))
 }
 
 func mustMarshal(v interface{}) string {

@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"strings"
 
 	distriv1 "github.com/distribox/pkg/protocol/distri/v1"
 	"github.com/distribox/vgpu/monitor"
@@ -65,6 +67,8 @@ type WorkerSession struct {
 	// Buffer data returned from workers (keyed by buffer_id)
 	returnedBuffers map[string][]byte
 
+	peerAddr string // gRPC peer address for local/remote detection
+
 	mu sync.RWMutex
 	connected bool
 }
@@ -86,6 +90,13 @@ func (s *OrchestratorService) Register(ctx context.Context, req *distriv1.Regist
 	workerID := generateWorkerID()
 	sessionToken := fmt.Sprintf("sess-%s", generateShortID())
 
+	// Capture peer address for local/remote detection
+	peerAddr := ""
+	if p, ok := peer.FromContext(ctx); ok {
+		peerAddr = p.Addr.String()
+	}
+	log.Printf("Register: worker=%s peer=%q", req.Hostname, peerAddr)
+
 	ws := &WorkerSession{
 		ID:              workerID,
 		Hostname:        req.Hostname,
@@ -99,6 +110,7 @@ func (s *OrchestratorService) Register(ctx context.Context, req *distriv1.Regist
 		sendCh:          make(chan *distriv1.OrchestratorMessage, 64),
 		taskResults:     make(map[string]chan *distriv1.TaskResult),
 		returnedBuffers: make(map[string][]byte),
+		peerAddr:        peerAddr,
 	}
 
 	s.mu.Lock()
@@ -338,6 +350,35 @@ func (s *OrchestratorService) GetReturnedBuffers(workerID string) map[string][]b
 }
 
 // ── Worker management helpers ─────────────────────────
+
+// IsSameHost returns true if the worker's peer address is from localhost.
+// Used to detect in-process workers that cause ICD proxy re-entry deadlock.
+func (s *OrchestratorService) IsSameHost(workerID string) bool {
+	ws := s.getWorker(workerID)
+	if ws == nil {
+		return false
+	}
+	ws.mu.RLock()
+	peerAddr := ws.peerAddr
+	ws.mu.RUnlock()
+
+	if peerAddr == "" {
+		return false
+	}
+	// Strip port: "[::1]:61867" → "::1", "127.0.0.1:12345" → "127.0.0.1"
+	host := peerAddr
+	if idx := strings.LastIndex(peerAddr, ":"); idx > 0 {
+		// Handle IPv6 [addr]:port format
+		if strings.HasPrefix(peerAddr, "[") {
+			if closeBracket := strings.Index(peerAddr, "]"); closeBracket > 0 {
+				host = peerAddr[1:closeBracket]
+			}
+		} else {
+			host = peerAddr[:idx]
+		}
+	}
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+}
 
 func (s *OrchestratorService) getWorker(workerID string) *WorkerSession {
 	s.mu.RLock()

@@ -81,8 +81,65 @@ if (Test-Path $IcdSo) {
     Write-Host "  ICD library -> $JniLibsDir"
 }
 
-# ── Step 3: Build Go bridge (gomobile) ──────────────────
-Write-Host "`n[3/4] Building Go bridge (gomobile)..." -ForegroundColor Yellow
+# ── Step 3: Build Go worker binary (CGO-enabled, real GPU) ──
+Write-Host "`n[3/5] Building Go worker for Android (CGO enabled, real GPU)..." -ForegroundColor Yellow
+
+$NDK_TOOLCHAIN = Join-Path $env:ANDROID_NDK_HOME "toolchains\llvm\prebuilt\windows-x86_64"
+$CC = Join-Path $NDK_TOOLCHAIN "bin\aarch64-linux-android${AndroidAPI}-clang.cmd"
+$CXX = Join-Path $NDK_TOOLCHAIN "bin\aarch64-linux-android${AndroidAPI}-clang++.cmd"
+
+if (-not (Test-Path $CC)) {
+    Write-Host "  Warning: NDK clang not found at $CC" -ForegroundColor Yellow
+    Write-Host "  CGO cross-compile skipped. Building without CGO (CPU-only)." -ForegroundColor Yellow
+    Push-Location $ProjectDir
+    try {
+        $env:GOOS = "android"
+        $env:GOARCH = "arm64"
+        $env:CGO_ENABLED = "0"
+        go build -ldflags="-s -w" -o (Join-Path $BuildDir "distribox-worker") .\cmd\worker\
+        if ($LASTEXITCODE -ne 0) { throw "Go worker build failed" }
+        Write-Host "  Worker binary (CPU-only) -> $BuildDir\distribox-worker"
+    } finally {
+        Pop-Location
+    }
+} else {
+    Push-Location $ProjectDir
+    try {
+        $env:GOOS = "android"
+        $env:GOARCH = "arm64"
+        $env:CGO_ENABLED = "1"
+        $env:CC = $CC
+        $env:CXX = $CXX
+        $env:CGO_LDFLAGS = "-lOpenCL -lm"
+        go build -buildmode=pie -ldflags="-s -w" -o (Join-Path $BuildDir "distribox-worker") .\cmd\worker\
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  CGO build failed, retrying without CGO..." -ForegroundColor Yellow
+            $env:CGO_ENABLED = "0"
+            go build -ldflags="-s -w" -o (Join-Path $BuildDir "distribox-worker") .\cmd\worker\
+            if ($LASTEXITCODE -ne 0) { throw "Go worker build failed" }
+            Write-Host "  Worker binary (CPU-only fallback) -> $BuildDir\distribox-worker"
+        } else {
+            Write-Host "  Worker binary (GPU enabled via CGO/OpenCL) -> $BuildDir\distribox-worker"
+        }
+    } finally {
+        Remove-Item Env:\GOOS -ErrorAction SilentlyContinue
+        Remove-Item Env:\GOARCH -ErrorAction SilentlyContinue
+        Remove-Item Env:\CGO_ENABLED -ErrorAction SilentlyContinue
+        Remove-Item Env:\CC -ErrorAction SilentlyContinue
+        Remove-Item Env:\CXX -ErrorAction SilentlyContinue
+        Remove-Item Env:\CGO_LDFLAGS -ErrorAction SilentlyContinue
+        Pop-Location
+    }
+}
+
+# Copy worker binary to Android assets
+$AssetsDir = Join-Path $ProjectDir "android\app\src\main\assets"
+New-Item -ItemType Directory -Force -Path $AssetsDir | Out-Null
+Copy-Item -Force (Join-Path $BuildDir "distribox-worker") $AssetsDir
+Write-Host "  Worker binary -> $AssetsDir"
+
+# ── Step 4: Build Go bridge (gomobile) ──────────────────
+Write-Host "`n[4/5] Building Go bridge (gomobile)..." -ForegroundColor Yellow
 
 Push-Location (Join-Path $ProjectDir "cmd\worker\gobridge")
 
@@ -104,8 +161,8 @@ try {
     Pop-Location
 }
 
-# ── Step 4: Build APK via Gradle ────────────────────────
-Write-Host "`n[4/4] Building APK with Gradle..." -ForegroundColor Yellow
+# ── Step 5: Build APK via Gradle ────────────────────────
+Write-Host "`n[5/5] Building APK with Gradle..." -ForegroundColor Yellow
 
 Push-Location (Join-Path $ProjectDir "android")
 

@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build (!windows && !linux) || (linux && !cgo)
 
 /*
  * cmd/worker/engine/gpu_stub.go — Stub GPU engine for non-Windows platforms

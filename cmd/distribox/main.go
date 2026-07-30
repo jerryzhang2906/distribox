@@ -1,5 +1,5 @@
 /*
- * cmd/distribox/main.go — DistriBox Unified Launcher v0.3.0
+ * cmd/distribox/main.go — DistriBox Unified Launcher v0.4.0
  *
  * Single executable with native Windows GUI (default) or console mode.
  *   - Virtual GPU Core (IPC server + gRPC orchestrator + HTTP API)
@@ -58,7 +58,7 @@ import (
 )
 
 const (
-	version = "v0.3.0"
+	version = "v0.4.0"
 )
 
 var (
@@ -97,7 +97,7 @@ func main() {
 	}
 
 	// ── Console mode (--console flag or non-Windows) ──────
-	setConsoleTitle("DistriBox v0.3.0 — Distributed Virtual GPU")
+	setConsoleTitle("DistriBox v0.4.0 — Distributed Virtual GPU")
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Fprintf(os.Stderr, "\nFATAL: %v\n", r)
